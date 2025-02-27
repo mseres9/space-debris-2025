@@ -1,9 +1,6 @@
 import numpy as np
-from datetime import datetime
 import time
 import matplotlib.pyplot as plt
-import os
-import pickle
 
 import BreakupUtilities as util
 
@@ -17,32 +14,32 @@ plt.close('all')
 ###############################################################################
 
 
-# # Sun-Synchronous Orbit (Envisat)
-# SMA_meters = 7143.4*1000.
-# ECC = 0.0001427
-# INC_rad = 98.1478*np.pi/180.
-# RAAN_rad = 224.8380*np.pi/180.
-# AOP_rad = 93.2798*np.pi/180.
-# TA_rad = 0.*np.pi/180.
-
-# # Spacecraft drag parameters
-# mass = 8211.
-# area_m2 = 85.76
-# Cd = 2.2
-
-
-# Starlink-1294
-SMA_meters = 6924.7136*1000.
-ECC = 0.000862984089
-INC_rad = 52.925049*np.pi/180.
-RAAN_rad = 268.072247*np.pi/180.
-AOP_rad = 102.174332*np.pi/180.
-TA_rad = 208.291901*np.pi/180.
+# Sun-Synchronous Orbit (Envisat)
+SMA_meters = 7143.4*1000.
+ECC = 0.0001427
+INC_rad = 98.1478*np.pi/180.
+RAAN_rad = 224.8380*np.pi/180.
+AOP_rad = 93.2798*np.pi/180.
+TA_rad = 0.*np.pi/180.
 
 # Spacecraft drag parameters
-mass = 260.
-area_m2 = 17.5
+mass = 8211.
+area_m2 = 85.76
 Cd = 2.2
+
+
+# # Starlink-1294
+# SMA_meters = 6924.7136*1000.
+# ECC = 0.000862984089
+# INC_rad = 52.925049*np.pi/180.
+# RAAN_rad = 268.072247*np.pi/180.
+# AOP_rad = 102.174332*np.pi/180.
+# TA_rad = 208.291901*np.pi/180.
+
+# # Spacecraft drag parameters
+# mass = 260.
+# area_m2 = 17.5
+# Cd = 2.2
 
 
 # Propagation time in seconds
