@@ -16,34 +16,34 @@ plt.close('all')
 ###############################################################################
 
 # Target orbit and epoch [UTC]
-# Envisat
-initial_epoch = datetime(2019, 7, 24, 0, 0, 0)
-SMA_meters = 7143.4*1000.
-ECC = 0.0001427
-INC_rad = 98.1478*np.pi/180.
-RAAN_rad = 224.8380*np.pi/180.
-AOP_rad = 93.2798*np.pi/180.
-TA_rad = 0.*np.pi/180.
+# # Envisat
+# initial_epoch = datetime(2019, 7, 24, 0, 0, 0)
+# SMA_meters = 7143.4*1000.
+# ECC = 0.0001427
+# INC_rad = 98.1478*np.pi/180.
+# RAAN_rad = 224.8380*np.pi/180.
+# AOP_rad = 93.2798*np.pi/180.
+# TA_rad = 0.*np.pi/180.
 
-# Impact Parameters
-mass_target = 8211.
-mass_impactor = 3.4
-impact_velocity = 14.*1000.
+# # Impact Parameters
+# mass_target = 8211.
+# mass_impactor = 3.4
+# impact_velocity = 14.*1000.
 
 
 
-# # GEO Test Case - Sky Muster
-# initial_epoch = datetime(2023, 1, 1, 12, 0, 0)
-# SMA_meters = 42166.02*1000.
-# ECC = 0.0001592
-# INC_rad = 0.12*np.pi/180.
-# RAAN_rad = 75.66*np.pi/180.
-# AOP_rad = 204.08*np.pi/180.
-# TA_rad = 141.11*np.pi/180.
+# GEO Test Case - Sky Muster
+initial_epoch = datetime(2023, 1, 1, 12, 0, 0)
+SMA_meters = 42166.02*1000.
+ECC = 0.0001592
+INC_rad = 0.12*np.pi/180.
+RAAN_rad = 75.66*np.pi/180.
+AOP_rad = 204.08*np.pi/180.
+TA_rad = 141.11*np.pi/180.
 
-# mass_target = 6440.
-# mass_impactor = 520.
-# impact_velocity = 1000.
+mass_target = 6440.
+mass_impactor = 520.
+impact_velocity = 1000.
 
 
 
