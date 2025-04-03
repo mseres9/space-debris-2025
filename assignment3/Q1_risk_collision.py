@@ -123,12 +123,17 @@ for pair, data in tca_results.items():
 
 print("HIE analysis completed.")
 
+output_dir = "assignment3/output_Q1"
+os.makedirs(output_dir, exist_ok=True)
+
 # Step 8: Save the results
-with open('tca_results.pkl', 'wb') as f:
+with open(os.path.join(output_dir, 'tca_results.pkl'), 'wb') as f:
     pickle.dump(tca_results, f)
 
-with open('hie_results.pkl', 'wb') as f:
+with open(os.path.join(output_dir, 'hie_results.pkl'), 'wb') as f:
     pickle.dump(hie_results, f)
+
+print("Results saved to:", output_dir)
 
 print("Results saved to files.")
 
