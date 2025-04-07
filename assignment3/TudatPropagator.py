@@ -100,7 +100,7 @@ def propagate_orbit(Xo, tvec, state_params, int_params, bodies=None):
     
     # Initial state
     initial_state = Xo.flatten()
-    
+    # print(f"vcomute_prop_orbit: {state_params}")
     # Retrieve input parameters
     central_bodies = state_params['central_bodies']
     bodies_to_create = state_params['bodies_to_create']

@@ -2,19 +2,29 @@ import numpy as np
 from astropy.coordinates.earth_orientation import eccentricity
 import tudatpy.astro.element_conversion as ec
 
-def apogee_perigee_filter(rso1, rso2, D):
+def apogee_perigee_filter(X1, X2, D):
     """
     Apogee-Perigee Filter to check if two objects can be dismissed.
+    X1, X2: State vectors (6x1 numpy array) - [x, y, z, vx, vy, vz]
+    D: Distance threshold (float)
     """
-    # Extract perigee and apogee of the primary and secondary object
-    q1 = rso1['perigee']
-    Q1 = rso1['apogee']
-    q2 = rso2['perigee']
-    Q2 = rso2['apogee']
+    # Convert Cartesian states to Keplerian elements
+    kep1 = ec.cartesian_to_keplerian(X1, 3.986004418e14)
+    kep2 = ec.cartesian_to_keplerian(X2, 3.986004418e14)
 
-    # Largest perigee and smallest apogee
+    # print(f"kep1: {kep1}, kep2: {kep2}")
+
+    # Extract perigee and apogee
+    q1 = kep1[0] * (1 - kep1[1])
+    Q1 = kep1[0] * (1 + kep1[1])
+    q2 = kep2[0] * (1 - kep2[1])
+    Q2 = kep2[0] * (1 + kep2[1])
+
+    # Define the bigger of the two perigees
     q = max(q1, q2)
+    # Define the smaller of the two apogees
     Q = min(Q1, Q2)
+    #print(f"q:{q}, Q: {Q},q - Q: {q-Q}")
 
     # Check if the objects can be filtered out
     if q - Q > D:
@@ -22,18 +32,28 @@ def apogee_perigee_filter(rso1, rso2, D):
     return False  # Keep for further analysis
 
 
-def geometrical_filter(rso1, rso2, D):
+def geometrical_filter(X1, X2, D):
     """
     Geometrical Filter to check if two objects can be dismissed.
+    X1, X2: State vectors (6x1 numpy array) - [x, y, z, vx, vy, vz]
+    D: Distance threshold (float)
     """
-    # Extract position vectors and inclination difference
-    rp = np.linalg.norm(rso1['position'])
-    rs = np.linalg.norm(rso2['position'])
-    IR = np.abs(rso1['inclination'] - rso2['inclination'])
+    #todo: add exception of the coplanar method
 
-    # Calculate uR for both objects
-    urp = rso1['true_anomaly'] + rso1['argument_of_perigee'] - rso1['raan']
-    urs = rso2['true_anomaly'] + rso2['argument_of_perigee'] - rso2['raan']
+    # Convert Cartesian states to Keplerian elements
+    kep1 = ec.cartesian_to_keplerian(X1, 3.986004418e14)
+    kep2 = ec.cartesian_to_keplerian(X2, 3.986004418e14)
+
+    # Extract inclination difference
+    IR = np.abs(kep1[2] - kep2[2])
+
+    # Relative distance and velocity
+    rp = np.linalg.norm(X1[:3])
+    rs = np.linalg.norm(X2[:3])
+
+    # True anomalies and argument of perigee
+    urp = kep1[5] + kep1[4] - kep1[3]
+    urs = kep2[5] + kep2[4] - kep2[3]
 
     # Compute the cosine of gamma
     cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
@@ -47,17 +67,28 @@ def geometrical_filter(rso1, rso2, D):
     return True  # Filter out
 
 
-def time_filter(rso1, rso2, D):
-    IR = np.abs(rso1['inclination'] - rso2['inclination'])
-    mu = 3.986 * 10 ** 14
-    ######  Object one #######
-    a_1 = (rso1['perigee'] + rso1['apogee'])/2
-    e_1 = (rso1['perigee'] - rso1['apogee'])/(rso1['perigee'] + rso1['apogee'])
+def time_filter(X1, X2, D):
+    """
+    Time Filter to check if two objects can be dismissed.
+    X1, X2: State vectors (6x1 numpy array) - [x, y, z, vx, vy, vz]
+    D: Distance threshold (float)
+    """
+    mu = 3.986004418e14
 
-    #Constants
-    alpha_1 = a_1* (1-e_1**2) * np.sin(IR)
-    ax_1 = e_1 * np.cos(rso1['argument_of_perigee']- rso1['raan'])
-    ay_1 = e_1 * np.sin(rso1['argument_of_perigee']- rso1['raan'])
+    # Convert Cartesian states to Keplerian elements
+    kep1 = ec.cartesian_to_keplerian(X1, mu)
+    kep2 = ec.cartesian_to_keplerian(X2, mu)
+
+    # Extract inclination difference
+    IR = np.abs(kep1[2] - kep2[2])
+
+    # Semi-major axes and eccentricities
+    a_1, e_1 = kep1[0], kep1[1]
+
+    # Constants for object one
+    alpha_1 = a_1 * (1 - e_1**2) * np.sin(IR)
+    ax_1 = e_1 * np.cos(kep1[4] - kep1[3])
+    ay_1 = e_1 * np.sin(kep1[4] - kep1[3])
     Q_1 = alpha_1 * (alpha_1 - 2*D*ay_1) - (1-e_1**2)*D**2
 
     to_solve_1 = (-D**2*ax_1 + (alpha_1-D*ay_1)*np.sqrt(Q_1))/(alpha_1*(alpha_1 - 2*D*ay_1)+D**2*e_1**2)
@@ -68,13 +99,12 @@ def time_filter(rso1, rso2, D):
     ur2 = np.arccos(to_solve_2)
 
     ######  Object two #######
-    a_2 = (rso2['perigee'] + rso2['apogee']) / 2
-    e_2 = (rso2['perigee'] - rso2['apogee']) / (rso2['perigee'] + rso2['apogee'])
+    a_2, e_2 = kep2[0], kep2[1]
 
     # Constants
     alpha_2 = a_2*(1 - e_2 ** 2) * np.sin(IR)
-    ax_2 = e_2 * np.cos(rso2['argument_of_perigee'] - rso2['raan'])
-    ay_2 = e_2 * np.sin(rso2['argument_of_perigee'] - rso2['raan'])
+    ax_2 = e_2 * np.cos(kep2[4] - kep2[3])
+    ay_2 = e_2 * np.sin(kep2[4] - kep2[3])
     Q_2 = alpha_2 * (alpha_2 - 2 * D * ay_2) - (1 - e_2 ** 2) * D ** 2
 
 
@@ -90,10 +120,10 @@ def time_filter(rso1, rso2, D):
     ur4 = np.arccos(to_solve_4)
 
     #
-    f1 = ur1 - rso1['argument_of_perigee'] - rso1['raan']
-    f2 = ur2 - rso1['argument_of_perigee'] - rso1['raan']
-    f3 = ur3 - rso2['argument_of_perigee'] - rso2['raan']
-    f4 = ur4 - rso2['argument_of_perigee'] - rso2['raan']
+    f1 = ur1 - kep1[4] - kep1[3]
+    f2 = ur2 - kep1[4] - kep1[3]
+    f3 = ur3 - kep2[4] - kep2[3]
+    f4 = ur4 - kep2[4] - kep2[3]
 
 
     M1 = ec.true_to_mean_anomaly(e_1,f1)
