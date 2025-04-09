@@ -29,16 +29,67 @@ def apogee_perigee_filter(X1, X2, D):
     # Check if the objects can be filtered out
     if q - Q > D:
         return True  # Filter out
-    return False  # Keep for further analysis
+    else:
+        return False
+    #return False  # Keep for further analysis
 
 
-def geometrical_filter(X1, X2, D):
+def geometrical_filter(X1, X2, Dthres):
     """
     Geometrical Filter to check if two objects can be dismissed.
     X1, X2: State vectors (6x1 numpy array) - [x, y, z, vx, vy, vz]
-    D: Distance threshold (float)
+    Dthres: Distance threshold (float)
     """
     #todo: add exception of the coplanar method
+    def calc_ur(IR,kep1,kep2):
+        A = 1/np.sin(IR) * (np.sin(kep2[2]) * np.sin(kep1[4] - kep2[4]))
+        B = 1/np.sin(IR) * ( np.sin(kep1[2]) * np.cos(kep2[2]) - np.sin(kep2[2]) * np.cos(kep1[2])  * np.cos(kep1[4] - kep2[4])  )
+        deltap = np.arctan(A / B)
+
+        C = 1 / np.sin(IR) * (np.sin(kep1[2]) * np.sin(kep1[4] - kep2[4]))
+        d = 1 / np.sin(IR) * (np.sin(kep1[2]) * np.cos(kep2[2]) * np.cos(kep1[4] - kep2[4]) - np.sin(kep2[2]) * np.cos(kep1[2]) )
+        deltas = np.arctan(C / d)
+
+        urp = kep1[5] + kep1[3] - deltap
+        urs = kep2[5] + kep2[3] - deltas
+        return urp, urs
+
+    def Newton(kep1, kep2,urp,urs,fp,fs,rp,rs,cos_gamma):
+        #Eccentricity
+        ep = kep1[1]
+        es = kep2[1]
+
+        #Eccentric anomaly
+        Ep = ec.true_to_eccentric_anomaly(fp,ep)
+        Es = ec.true_to_eccentric_anomaly(fs, es)
+
+        #Constants ax and ay
+        axp = ep * np.cos(kep1[3]-  kep1[4])
+        ayp = ep * np.sin(kep1[3] - kep1[4])
+
+        axs = es * np.cos(kep2[3] - kep2[4])
+        ays = es * np.sin(kep2[3] - kep2[4])
+
+        #Constant A to G
+        A = np.sin(urp) + ayp
+        B = np.cos(urp) + axp
+        C = np.sin(urs) + ays
+        D = np.cos(urs) + axs
+        F = rp * ep * np.sin(fp) + rs *(A*np.cos(urs) - B*np.cos(IR)*np.sin(urs))
+        G = rs * es * np.sin(fs) + rp *(C*np.cos(urp) - D*np.cos(IR)*np.sin(urp))
+        # Derivative
+        Ffp = rp * ep *np.cos(Ep) + rs * cos_gamma
+        Ffs = - rs /(1+es*np.cos(fs)) * (A*C + B*D*np.cos(IR))
+        Gfp = - rp /(1+ep*np.cos(fp)) * (A*C + B*D*np.cos(IR))
+        Gfs = rs * es * np.cos(Es) + rp * cos_gamma
+
+        h = (F*Gfs - G*Ffs)/(Ffs * Gfp - Ffp * Gfs)
+        k = (G*Ffp - F*Gfp)/(Ffs * Gfp - Ffp * Gfs)
+        #Update fp and fs
+        fp = fp + h
+        fs = fs + k
+
+        return fp, fs, h , k
 
     # Convert Cartesian states to Keplerian elements
     kep1 = ec.cartesian_to_keplerian(X1, 3.986004418e14)
@@ -52,19 +103,55 @@ def geometrical_filter(X1, X2, D):
     rs = np.linalg.norm(X2[:3])
 
     # True anomalies and argument of perigee
-    urp = kep1[5] + kep1[4] - kep1[3]
-    urs = kep2[5] + kep2[4] - kep2[3]
+    urp = calc_ur(IR, kep1, kep2)[0]
+    urs = calc_ur(IR, kep1, kep2)[1]
+
+    #True anomalies
+    fp = kep1[5]
+    fs = kep2[5]
 
     # Compute the cosine of gamma
     cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
 
+
+    #Iteration using Newton's method
+    not_converged = True
+    iterations = 0
+    while not_converged:
+        fp = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[0]
+        fs = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[1]
+
+        h = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[2]
+        k = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[3]
+
+        kep1[5] = fp
+        kep2[5] = fs
+
+        urp = calc_ur(IR, kep1, kep2)[0]
+        urs = calc_ur(IR, kep1, kep2)[1]
+
+        rp = kep1[0] * (1 - kep1[1] ** 2) / (1 + kep1[1] * np.cos(kep1[5]))
+        rs = kep2[0] * (1 - kep2[1] ** 2) / (1 + kep2[1] * np.cos(kep2[5]))
+
+        cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
+
+        #Start iterations
+        iterations += 1
+        tol = 0.001
+        if iterations > 100:
+            print("Too many iterations")
+            not_converged = False
+        if h < tol * np.pi/180 and k < tol * np.pi/180:
+            not_converged = False
+
     # Calculate the relative distance squared
-    r_rel_sq = rp**2 + rs**2 - 2 * rp * rs * cos_gamma
+    r_rel_sq = rp ** 2 + rs ** 2 - 2 * rp * rs * cos_gamma
 
     # Check if the relative distance is less than D
-    if np.sqrt(r_rel_sq) < D:
-        return False  # Keep for further analysis
-    return True  # Filter out
+    if np.sqrt(r_rel_sq) > Dthres:
+        return True  #Filter out
+    else:
+        return False # Keep for further analysis
 
 
 def time_filter(X1, X2, D):
@@ -141,12 +228,24 @@ def time_filter(X1, X2, D):
     T1 = 2*np.pi*np.sqrt((a_1*10**3)**3/mu)
     T2 = 2*np.pi*np.sqrt((a_2*10**3)**3/mu)
 
-    n = 0
-    while n*T1 < 48 * 3600:
-        if max(T1*n + t1,T2*n + t3) < min(T1*n + t2,T2*n +t4):
+    K = 0
+    dt = 0
+    while dt < 48 * 3600:
+        if max(T1*K + t1, T2*K + t3) < min(T1*K + t2, T2*K +t4):
             return False
         else:
-            n = n + 1
+            K = K + 1
+            dt = dt + max(T1, T2)
+
+            # n_1 = np.sqrt(mu/(a_1*10**3)**3)
+            # ndot = 1
+            # Mdot = 1
+            # deltadot = 1
+            #
+            #
+            #
+            # T2 = new T2
+
     return True
 
 def filter_object_pairs(rso_catalog, D):
