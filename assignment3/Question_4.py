@@ -16,7 +16,7 @@ mu = G.value * M_earth.value  # Earth's gravitational parameter (m^3/s^2)
 tk_list = data[2]["tk_list"]          # Time list
 Yk_list = data[2]["Yk_list"]          # Measurement list
 sensor_ecef = data[1]['sensor_ecef'].flatten()  # Sensor position in ECEF
-
+print(Yk_list)
 # Make sensor to eci
 
 # Extract first measurement
