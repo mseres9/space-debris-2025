@@ -3,27 +3,33 @@ import os
 import numpy as np
 from scipy.optimize import fsolve
 from astropy.constants import G, M_earth
+from tudatpy.astro import two_body_dynamics
+import TudatPropagator as prop
 
 # Load Data
 current_dir = os.getcwd()
-with open(os.path.join(current_dir, 'Assignment3/data/group4/q4_meas_iod_99004.pkl'), 'rb') as f:
+with open(os.path.join(current_dir, 'Assignment3\data\group4\q4_meas_iod_99004 (1).pkl'), 'rb') as f:
     data = pickle.load(f)
 
 # Constants
 mu = G.value * M_earth.value  # Earth's gravitational parameter (m^3/s^2)
 
+# Load bodies
+bodies_to_create = ['Earth']
+bodies = prop.tudat_initialize_bodies(bodies_to_create)
+
 # Extract data
 tk_list = data[2]["tk_list"]          # Time list
 Yk_list = data[2]["Yk_list"]          # Measurement list
 sensor_ecef = data[1]['sensor_ecef'].flatten()  # Sensor position in ECEF
-print(Yk_list)
+print(data[2]["tk_list"] )
 # Make sensor to eci
-
+796798230.0, 796798950.0
 # Extract first measurement
 rg, ra, dec = Yk_list[0].flatten()
 
 # Convert measurement to ECI position
-def ra_dec_to_eci(rg, ra, dec, sensor_ecef):
+def ra_dec_to_eci(rg, ra, dec, sensor_ecef, t):
     # Convert to Cartesian relative to sensor
     r_rel = rg * np.array([
         np.cos(ra) * np.cos(dec),
@@ -31,14 +37,17 @@ def ra_dec_to_eci(rg, ra, dec, sensor_ecef):
         np.sin(dec)
     ])
     # Approximate ECEF = ECI (neglecting Earth's rotation here)
-    r_eci = sensor_ecef + r_rel
+    earth_rotation_model = bodies.get("Earth").rotation_model
+    ecef2eci = earth_rotation_model.body_fixed_to_inertial_rotation(t)
+    sensor_eci = np.matmul(ecef2eci, sensor_ecef)
+    r_eci = sensor_eci + r_rel
     return r_eci
 
-r_eci_1 = ra_dec_to_eci(rg, ra, dec, sensor_ecef)
+r_eci_1 = ra_dec_to_eci(rg, ra, dec, sensor_ecef, tk_list[0])
 
 # Estimate velocity from second observation
 rg2, ra2, dec2 = Yk_list[1].flatten()
-r_eci_2 = ra_dec_to_eci(rg2, ra2, dec2, sensor_ecef)
+r_eci_2 = ra_dec_to_eci(rg2, ra2, dec2, sensor_ecef, tk_list[1])
 dt = tk_list[1] - tk_list[0]
 v_eci_1 = (r_eci_2 - r_eci_1) / dt
 
@@ -87,5 +96,5 @@ for i in range(num_samples):
 kepler_samples = np.array(kepler_samples)
 covariance_matrix = np.cov(kepler_samples.T)
 
-print("\nUncertainty (Covariance Matrix of Keplerian Elements):")
-print(covariance_matrix)
+#print("\nUncertainty (Covariance Matrix of Keplerian Elements):")
+#print(covariance_matrix)
