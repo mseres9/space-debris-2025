@@ -1,6 +1,8 @@
 import numpy as np
 from astropy.coordinates.earth_orientation import eccentricity
 import tudatpy.astro.element_conversion as ec
+from pandas.core.nanops import na_accum_func
+
 
 def apogee_perigee_filter(X1, X2, D):
     """
@@ -96,8 +98,16 @@ def geometrical_filter(X1, X2, Dthres):
     kep1 = ec.cartesian_to_keplerian(X1, 3.986004418e14)
     kep2 = ec.cartesian_to_keplerian(X2, 3.986004418e14)
 
-    # Extract inclination between the two orbital planes
-    IR = np.abs(kep1[2] - kep2[2])
+    # Compute vector normal to orbital planes
+    ws = np.array([np.sin(kep1[4]) * np.cos(kep1[2]),np.cos(kep1[4]) * np.sin(kep1[2]),np.cos(kep1[2])])
+    wp = np.array([np.sin(kep2[4]) * np.cos(kep2[2]),np.cos(kep2[4]) * np.sin(kep2[2]),np.cos(kep2[2])])
+    K = np.cross(ws, wp)
+    if np.linalg.norm(K) > 1:
+        print("Coplanar method required")
+        return False
+
+    # Inclination of the two orbital planes
+    IR = np.arcsin(np.linalg.norm(K))
 
     # Extract distance and velocity
     rp = np.linalg.norm(X1[:3])
@@ -158,10 +168,10 @@ def geometrical_filter(X1, X2, Dthres):
             iterations += 1
             tol = 0.001
             if iterations > 100:
-                print("Too many iterations")
+                #print("Too many iterations")
                 not_converged = False
             if h < tol * np.pi/180 and k < tol * np.pi/180:
-                print("New object")
+                #print("New object")
                 not_converged = False
 
         # Calculate the relative distance squared
@@ -170,6 +180,7 @@ def geometrical_filter(X1, X2, Dthres):
 
     # Check if the relative distance is less than D
     if list_r_rel[0] > Dthres and list_r_rel[1] > Dthres:
+
         return True  #Filter out
     else:
         return False # Keep for further analysis
@@ -187,8 +198,16 @@ def time_filter(X1, X2, D):
     kep1 = ec.cartesian_to_keplerian(X1, mu)
     kep2 = ec.cartesian_to_keplerian(X2, mu)
 
-    # Extract inclination difference
-    IR = np.abs(kep1[2] - kep2[2])
+    # Compute vector normal to orbital planes
+    ws = np.array([np.sin(kep1[4]) * np.cos(kep1[2]), np.cos(kep1[4]) * np.sin(kep1[2]), np.cos(kep1[2])])
+    wp = np.array([np.sin(kep2[4]) * np.cos(kep2[2]), np.cos(kep2[4]) * np.sin(kep2[2]), np.cos(kep2[2])])
+    K = np.cross(ws, wp)
+    if np.linalg.norm(K) > 1:
+        tio = 1
+        return False
+
+    # Inclination of the two orbital planes
+    IR = np.arcsin(np.linalg.norm(K))
 
     # Semi-major axes and eccentricities
     a_1, e_1 = kep1[0], kep1[1]
@@ -252,22 +271,15 @@ def time_filter(X1, X2, D):
     K = 0
     dt = 0
     while dt < 48 * 3600:
+        K = K + 1
+        dt = dt + max(T1,T2)
         if max(T1*K + t1, T2*K + t3) < min(T1*K + t2, T2*K +t4):
-            return False
+            return False #Keep for further analysis
         else:
             K = K + 1
             dt = dt + max(T1, T2)
 
-            # n_1 = np.sqrt(mu/(a_1*10**3)**3)
-            # ndot = 1
-            # Mdot = 1
-            # deltadot = 1
-            #
-            #
-            #
-            # T2 = new T2
-
-    return True
+    return True #Filter out
 
 def filter_object_pairs(rso_catalog, D):
     """
