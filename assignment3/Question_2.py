@@ -323,6 +323,25 @@ print("Covariance of delta-V:\n", cov_dv)
 print("Covariance of final state:\n", cov_final)
 print(f"Sanity Check: {states_after_dv[-1] - state_final.T}")
 
+# Calculate correlations
+def correlation(cov):
+    n = cov.shape[0]
+    corr = np.zeros_like(cov)
+    stds = np.zeros(n)
+    # Calculate stds
+    for x in range(n):
+        stds[x] = np.sqrt(cov[x,x])
+
+    # Calculate correlation matrix
+    for x in range(n):
+        for y in range(n):
+            corr[x, y] = cov[x,y]/(stds[x]*stds[y])
+    # Return correlation matrix
+    return corr
+
+corr_state_at_dv = correlation(cov_state_at_dv)
+corr_dv = correlation(cov_dv)
+
 ###############################################################################################
 ######################################### Final Plots #########################################
 ###############################################################################################
@@ -456,4 +475,19 @@ for i in range(3):
 
 plt.tight_layout()
 plt.savefig('plots/Q2_dv_histogram.png')
+plt.show()
+
+# Plot correlation matrices
+labels = ['$r_x$', '$r_y$', '$r_z$', '$v_x$', '$v_y$', '$v_z$']
+plt.figure()
+sns.heatmap(np.abs(corr_state_at_dv), xticklabels=labels, yticklabels=labels,annot=False, center=0, square=True, linewidths=.5)
+plt.tight_layout()
+plt.savefig('plots/Q2_corr_state_at_dv.png')
+plt.show()
+
+labels = ['$\Delta v_x$', '$\Delta v_y$', '$\Delta v_z$']
+plt.figure()
+sns.heatmap(np.abs(corr_dv), xticklabels=labels, yticklabels=labels,annot=False, center=0, square=True, linewidths=.5)
+plt.tight_layout()
+plt.savefig('plots/Q2_corr_dv.png')
 plt.show()
