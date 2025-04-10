@@ -6,7 +6,7 @@ from astropy.constants import G, M_earth
 
 # Load Data
 current_dir = os.getcwd()
-with open(os.path.join(current_dir, 'q4_meas_iod_99004.pkl'), 'rb') as f:
+with open(os.path.join(current_dir, 'Assignment3/data/group4/q4_meas_iod_99004.pkl'), 'rb') as f:
     data = pickle.load(f)
 
 # Constants
@@ -16,6 +16,8 @@ mu = G.value * M_earth.value  # Earth's gravitational parameter (m^3/s^2)
 tk_list = data[2]["tk_list"]          # Time list
 Yk_list = data[2]["Yk_list"]          # Measurement list
 sensor_ecef = data[1]['sensor_ecef'].flatten()  # Sensor position in ECEF
+
+# Make sensor to eci
 
 # Extract first measurement
 rg, ra, dec = Yk_list[0].flatten()
