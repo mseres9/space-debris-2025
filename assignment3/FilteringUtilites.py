@@ -111,58 +111,65 @@ def geometrical_filter(X1, X2, Dthres):
     deltap = calc_ur(IR, kep1, kep2)[2]
     deltas = calc_ur(IR, kep1, kep2)[3]
 
-    #True anomalies
-    fp = deltap - kep1[3]
-    fs = deltas - kep2[3]
+    #Initial true anomalies
+    fp = 0
+    fs = 0
+    list_fp = [deltap - kep1[3],fp + np.pi]
+    list_fs = [deltas - kep2[3], fs + np.pi]
+    #
+    list_r_rel = []
 
     # Compute the cosine of gamma
     cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
 
+    for i in range(len(list_fp)):
+        #Iteration loop using Newton's method
+        not_converged = True
+        iterations = 0
+        fp = list_fp[i]
+        fs = list_fs[i]
+        while not_converged:
 
-    #Iteration loop using Newton's method
-    not_converged = True
-    iterations = 0
-    while not_converged:
+            #Compute new true anomalies
+            fp = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[0]
+            fs = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[1]
 
-        #Compute new true anomalies
-        fp = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[0]
-        fs = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[1]
+            #Extract increments
+            h = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[2]
+            k = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[3]
 
-        #Extract increments
-        h = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[2]
-        k = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[3]
+            #Udpate keplerian state with new true anomaly
+            kep1[5] = fp
+            kep2[5] = fs
 
-        #Udpate keplerian state with new true anomaly
-        kep1[5] = fp
-        kep2[5] = fs
-
-        #Update urs and urp
-        urp = calc_ur(IR, kep1, kep2)[0]
-        urs = calc_ur(IR, kep1, kep2)[1]
+            #Update urs and urp
+            urp = calc_ur(IR, kep1, kep2)[0]
+            urs = calc_ur(IR, kep1, kep2)[1]
 
 
-        #Updtae rs and rp
-        rp = kep1[0] * (1 - kep1[1] ** 2) / (1 + kep1[1] * np.cos(kep1[5]))
-        rs = kep2[0] * (1 - kep2[1] ** 2) / (1 + kep2[1] * np.cos(kep2[5]))
+            #Updtae rs and rp
+            rp = kep1[0] * (1 - kep1[1] ** 2) / (1 + kep1[1] * np.cos(kep1[5]))
+            rs = kep2[0] * (1 - kep2[1] ** 2) / (1 + kep2[1] * np.cos(kep2[5]))
 
-        # Update the cosine of gamma
-        cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
+            # Update the cosine of gamma
+            cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
 
-        #Start iterations
-        iterations += 1
-        tol = 0.001
-        if iterations > 100:
-            print("Too many iterations")
-            not_converged = False
-        if h < tol * np.pi/180 and k < tol * np.pi/180:
-            print("New object")
-            not_converged = False
+            #Start iterations
+            iterations += 1
+            tol = 0.001
+            if iterations > 100:
+                print("Too many iterations")
+                not_converged = False
+            if h < tol * np.pi/180 and k < tol * np.pi/180:
+                print("New object")
+                not_converged = False
 
-    # Calculate the relative distance squared
-    r_rel_sq = rp ** 2 + rs ** 2 - 2 * rp * rs * cos_gamma
+        # Calculate the relative distance squared
+        r_rel_sq = rp ** 2 + rs ** 2 - 2 * rp * rs * cos_gamma
+        list_r_rel.append(np.sqrt(r_rel_sq))
 
     # Check if the relative distance is less than D
-    if np.sqrt(r_rel_sq) > Dthres:
+    if list_r_rel[0] > Dthres and list_r_rel[1] > Dthres:
         return True  #Filter out
     else:
         return False # Keep for further analysis
