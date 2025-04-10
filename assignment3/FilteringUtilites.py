@@ -52,7 +52,7 @@ def geometrical_filter(X1, X2, Dthres):
 
         urp = kep1[5] + kep1[3] - deltap
         urs = kep2[5] + kep2[3] - deltas
-        return urp, urs
+        return urp, urs, deltap, deltas
 
     def Newton(kep1, kep2,urp,urs,fp,fs,rp,rs,cos_gamma):
         #Eccentricity
@@ -75,16 +75,17 @@ def geometrical_filter(X1, X2, Dthres):
         B = np.cos(urp) + axp
         C = np.sin(urs) + ays
         D = np.cos(urs) + axs
-        F = rp * ep * np.sin(fp) + rs *(A*np.cos(urs) - B*np.cos(IR)*np.sin(urs))
-        G = rs * es * np.sin(fs) + rp *(C*np.cos(urp) - D*np.cos(IR)*np.sin(urp))
-        # Derivative
-        Ffp = rp * ep *np.cos(Ep) + rs * cos_gamma
-        Ffs = - rs /(1+es*np.cos(fs)) * (A*C + B*D*np.cos(IR))
-        Gfp = - rp /(1+ep*np.cos(fp)) * (A*C + B*D*np.cos(IR))
+        F = rp * ep * np.sin(fp) + rs * ( A * np.cos(urs) - B * np.cos(IR) * np.sin(urs))
+        G = rs * es * np.sin(fs) + rp * ( C * np.cos(urp) - D * np.cos(IR) * np.sin(urp))
+        Ffp = rp * ep * np.cos(Ep) + rs * cos_gamma
+        Ffs = - rs / (1 + es * np.cos(fs)) * (A * C + B * D * np.cos(IR))
+        Gfp = - rp / (1 + ep * np.cos(fp)) * (A * C + B * D * np.cos(IR))
         Gfs = rs * es * np.cos(Es) + rp * cos_gamma
 
-        h = (F*Gfs - G*Ffs)/(Ffs * Gfp - Ffp * Gfs)
-        k = (G*Ffp - F*Gfp)/(Ffs * Gfp - Ffp * Gfs)
+        #Compute true anomaly increments
+        h = (F * Gfs - G * Ffs) / (Ffs * Gfp - Ffp * Gfs)
+        k = (G * Ffp - F * Gfp) / (Ffs * Gfp - Ffp * Gfs)
+
         #Update fp and fs
         fp = fp + h
         fs = fs + k
@@ -95,44 +96,56 @@ def geometrical_filter(X1, X2, Dthres):
     kep1 = ec.cartesian_to_keplerian(X1, 3.986004418e14)
     kep2 = ec.cartesian_to_keplerian(X2, 3.986004418e14)
 
-    # Extract inclination difference
+    # Extract inclination between the two orbital planes
     IR = np.abs(kep1[2] - kep2[2])
 
-    # Relative distance and velocity
+    # Extract distance and velocity
     rp = np.linalg.norm(X1[:3])
     rs = np.linalg.norm(X2[:3])
 
-    # True anomalies and argument of perigee
+    # Calculate urp and urs
     urp = calc_ur(IR, kep1, kep2)[0]
     urs = calc_ur(IR, kep1, kep2)[1]
 
+    # Calculate urp and urs
+    deltap = calc_ur(IR, kep1, kep2)[2]
+    deltas = calc_ur(IR, kep1, kep2)[3]
+
     #True anomalies
-    fp = kep1[5]
-    fs = kep2[5]
+    fp = deltap - kep1[3]
+    fs = deltas - kep2[3]
 
     # Compute the cosine of gamma
     cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
 
 
-    #Iteration using Newton's method
+    #Iteration loop using Newton's method
     not_converged = True
     iterations = 0
     while not_converged:
+
+        #Compute new true anomalies
         fp = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[0]
         fs = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[1]
 
+        #Extract increments
         h = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[2]
         k = Newton(kep1, kep2, urp, urs, fp, fs,rp,rs,cos_gamma)[3]
 
+        #Udpate keplerian state with new true anomaly
         kep1[5] = fp
         kep2[5] = fs
 
+        #Update urs and urp
         urp = calc_ur(IR, kep1, kep2)[0]
         urs = calc_ur(IR, kep1, kep2)[1]
 
+
+        #Updtae rs and rp
         rp = kep1[0] * (1 - kep1[1] ** 2) / (1 + kep1[1] * np.cos(kep1[5]))
         rs = kep2[0] * (1 - kep2[1] ** 2) / (1 + kep2[1] * np.cos(kep2[5]))
 
+        # Update the cosine of gamma
         cos_gamma = np.cos(urp) * np.cos(urs) + np.sin(urp) * np.sin(urs) * np.cos(IR)
 
         #Start iterations
@@ -142,6 +155,7 @@ def geometrical_filter(X1, X2, Dthres):
             print("Too many iterations")
             not_converged = False
         if h < tol * np.pi/180 and k < tol * np.pi/180:
+            print("New object")
             not_converged = False
 
     # Calculate the relative distance squared
