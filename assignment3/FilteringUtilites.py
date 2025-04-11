@@ -2,7 +2,50 @@ import numpy as np
 from astropy.coordinates.earth_orientation import eccentricity
 import tudatpy.astro.element_conversion as ec
 from pandas.core.nanops import na_accum_func
+from breakup_modeling import *
+from breakup_modeling.BreakupUtilities import *
 
+
+
+def pertubations(X):
+    """
+    Calculates mean change over orbit of keplerian elements.
+    X State vector (6x1 numpy array) - [x, y, z, vx, vy, vz]
+    """
+    state_params = {
+                    'mass':  100.0,
+                    'area': 1.0,
+                    'Cd':  2.2,
+                    'Nquad': 8,
+                }
+    dX = int_salt_grav_drag(X,state_params)
+    return dX
+
+def new_period(K,kep,dX,deltadot):
+    """
+    Calculates new orbital period
+    K: number of revolutions
+    kep: keplerian state (6x1 numpy array)
+    dX: Mean change over orbit  (5x1 numpy array) - [dadt, dedt, didt, draandt, daop/dt]
+    deltadot: change in delta angle
+    """
+    Re = 6371 * 10 ** 3
+    mu = 3.986004418e14
+    J2 = -0.108 * 10 ** (-2)
+
+    a = kep[0]
+    e = kep[1]
+    i = kep[2]
+
+    n = np.sqrt(mu/a**3)
+
+    ndot = -3/2 * dX[0] * np.sqrt(mu/a**5)
+    Mdot = 3/4 * J2 * n * (Re**2)/(a**2 * (1-e**2)**(3/2)) * (3 * np.cos(i)**2 - 1)
+    aopdot = dX[4]
+
+    TDF = 2*np.pi / (n + Mdot + aopdot - deltadot)
+    T = TDF * (1 - 2 * np.pi/n * ndot/n * K )
+    return T
 
 def apogee_perigee_filter(X1, X2, D):
     """
@@ -36,6 +79,20 @@ def apogee_perigee_filter(X1, X2, D):
     #return False  # Keep for further analysis
 
 
+def calc_ur(IR,kep1,kep2):
+    A = 1/np.sin(IR) * (np.sin(kep2[2]) * np.sin(kep1[4] - kep2[4]))
+    B = 1/np.sin(IR) * ( np.sin(kep1[2]) * np.cos(kep2[2]) - np.sin(kep2[2]) * np.cos(kep1[2])  * np.cos(kep1[4] - kep2[4])  )
+    deltap = np.arctan(A / B)
+
+    C = 1 / np.sin(IR) * (np.sin(kep1[2]) * np.sin(kep1[4] - kep2[4]))
+    d = 1 / np.sin(IR) * (np.sin(kep1[2]) * np.cos(kep2[2]) * np.cos(kep1[4] - kep2[4]) - np.sin(kep2[2]) * np.cos(kep1[2]) )
+    deltas = np.arctan(C / d)
+
+    urp = kep1[5] + kep1[3] - deltap
+    urs = kep2[5] + kep2[3] - deltas
+    return urp, urs, deltap, deltas
+
+
 def geometrical_filter(X1, X2, Dthres):
     """
     Geometrical Filter to check if two objects can be dismissed.
@@ -43,18 +100,6 @@ def geometrical_filter(X1, X2, Dthres):
     Dthres: Distance threshold (float)
     """
     #todo: add exception of the coplanar method
-    def calc_ur(IR,kep1,kep2):
-        A = 1/np.sin(IR) * (np.sin(kep2[2]) * np.sin(kep1[4] - kep2[4]))
-        B = 1/np.sin(IR) * ( np.sin(kep1[2]) * np.cos(kep2[2]) - np.sin(kep2[2]) * np.cos(kep1[2])  * np.cos(kep1[4] - kep2[4])  )
-        deltap = np.arctan(A / B)
-
-        C = 1 / np.sin(IR) * (np.sin(kep1[2]) * np.sin(kep1[4] - kep2[4]))
-        d = 1 / np.sin(IR) * (np.sin(kep1[2]) * np.cos(kep2[2]) * np.cos(kep1[4] - kep2[4]) - np.sin(kep2[2]) * np.cos(kep1[2]) )
-        deltas = np.arctan(C / d)
-
-        urp = kep1[5] + kep1[3] - deltap
-        urs = kep2[5] + kep2[3] - deltas
-        return urp, urs, deltap, deltas
 
     def Newton(kep1, kep2,urp,urs,fp,fs,rp,rs,cos_gamma):
         #Eccentricity
@@ -103,7 +148,6 @@ def geometrical_filter(X1, X2, Dthres):
     wp = np.array([np.sin(kep2[4]) * np.cos(kep2[2]),np.cos(kep2[4]) * np.sin(kep2[2]),np.cos(kep2[2])])
     K = np.cross(ws, wp)
     if np.linalg.norm(K) > 1:
-        print("Coplanar method required")
         return False
 
     # Inclination of the two orbital planes
@@ -202,82 +246,103 @@ def time_filter(X1, X2, D):
     ws = np.array([np.sin(kep1[4]) * np.cos(kep1[2]), np.cos(kep1[4]) * np.sin(kep1[2]), np.cos(kep1[2])])
     wp = np.array([np.sin(kep2[4]) * np.cos(kep2[2]), np.cos(kep2[4]) * np.sin(kep2[2]), np.cos(kep2[2])])
     K = np.cross(ws, wp)
+
+    #If objects are coplanar eliminate them
     if np.linalg.norm(K) > 1:
-        tio = 1
         return False
 
     # Inclination of the two orbital planes
     IR = np.arcsin(np.linalg.norm(K))
 
-    # Semi-major axes and eccentricities
+    # Semi-major axis and eccentricity
     a_1, e_1 = kep1[0], kep1[1]
 
-    # Constants for object one
+    #Constants for object one
     alpha_1 = a_1 * (1 - e_1**2) * np.sin(IR)
     ax_1 = e_1 * np.cos(kep1[4] - kep1[3])
     ay_1 = e_1 * np.sin(kep1[4] - kep1[3])
     Q_1 = alpha_1 * (alpha_1 - 2*D*ay_1) - (1-e_1**2)*D**2
 
+    #To simplify calculations
     to_solve_1 = (-D**2*ax_1 + (alpha_1-D*ay_1)*np.sqrt(Q_1))/(alpha_1*(alpha_1 - 2*D*ay_1)+D**2*e_1**2)
     to_solve_2 = (-D**2*ax_1 - (alpha_1-D*ay_1)*np.sqrt(Q_1))/(alpha_1*(alpha_1 - 2*D*ay_1)+D**2*e_1**2)
+
+    #Test from Hoots
     if Q_1 < 0 or np.abs(to_solve_1) > 1 or np.abs(to_solve_2) > 1 :
         return False
+
+    #Determine ur1 and ur2
     ur1 = np.arccos(to_solve_1)
     ur2 = np.arccos(to_solve_2)
 
-    ######  Object two #######
+    ##### Repeat for object two ####
+
+    # Semi-major axis and eccentricity
     a_2, e_2 = kep2[0], kep2[1]
 
-    # Constants
+    # Constants for object two
     alpha_2 = a_2*(1 - e_2 ** 2) * np.sin(IR)
     ax_2 = e_2 * np.cos(kep2[4] - kep2[3])
     ay_2 = e_2 * np.sin(kep2[4] - kep2[3])
     Q_2 = alpha_2 * (alpha_2 - 2 * D * ay_2) - (1 - e_2 ** 2) * D ** 2
 
+    #To simplify calculations
+    to_solve_3 = (-D ** 2 * ax_2 + (alpha_2 - D * ay_2) * np.sqrt(Q_2)) / (alpha_2 * (alpha_2 - 2 * D * ay_2) + D ** 2 * e_2 ** 2)
+    to_solve_4 = (-D ** 2 * ax_2 - (alpha_2 - D * ay_2) * np.sqrt(Q_2)) / (alpha_2 * (alpha_2 - 2 * D * ay_2) + D ** 2 * e_2 ** 2)
 
-    to_solve_3 = (-D ** 2 * ax_2 + (alpha_2 - D * ay_2) * np.sqrt(Q_2)) / (
-                alpha_2 * (alpha_2 - 2 * D * ay_2) + D ** 2 * e_2 ** 2)
-    to_solve_4 = (-D ** 2 * ax_2 - (alpha_2 - D * ay_2) * np.sqrt(Q_2)) / (
-                alpha_2 * (alpha_2 - 2 * D * ay_2) + D ** 2 * e_2 ** 2)
-
+    #Test from Hoots
     if Q_2 < 0 or np.abs(to_solve_3) > 1 or np.abs(to_solve_4) > 1 :
         return False
 
+    # Determine ur3 and ur4
     ur3 = np.arccos(to_solve_3)
     ur4 = np.arccos(to_solve_4)
 
-    #
+    #Determine true anomalies window
     f1 = ur1 - kep1[4] - kep1[3]
     f2 = ur2 - kep1[4] - kep1[3]
     f3 = ur3 - kep2[4] - kep2[3]
     f4 = ur4 - kep2[4] - kep2[3]
 
-
+    #Transform into time
     M1 = ec.true_to_mean_anomaly(e_1,f1)
     t1 = ec.delta_mean_anomaly_to_elapsed_time(M1,mu,a_1*10**3)
-
+    #
     M2 = ec.true_to_mean_anomaly(e_1, f2)
     t2 = ec.delta_mean_anomaly_to_elapsed_time(M2, mu, a_1*10**3)
-
+    #
     M3 = ec.true_to_mean_anomaly(e_2, f3)
     t3 = ec.delta_mean_anomaly_to_elapsed_time(M3, mu, a_2*10**3)
-
+    #
     M4 = ec.true_to_mean_anomaly(e_2, f4)
     t4 = ec.delta_mean_anomaly_to_elapsed_time(M4, mu, a_2*10**3)
 
+    #Compute period of two objects
     T1 = 2*np.pi*np.sqrt((a_1*10**3)**3/mu)
     T2 = 2*np.pi*np.sqrt((a_2*10**3)**3/mu)
 
+    #Compute delta p and s
+    deltap = calc_ur(IR, kep1, kep2)[2]
+    deltas = calc_ur(IR, kep1, kep2)[3]
+
+    #Begin iteration to check whether time interval overlap
     K = 0
     dt = 0
     while dt < 48 * 3600:
-        K = K + 1
-        dt = dt + max(T1,T2)
         if max(T1*K + t1, T2*K + t3) < min(T1*K + t2, T2*K +t4):
             return False #Keep for further analysis
         else:
             K = K + 1
             dt = dt + max(T1, T2)
+
+            dX1 = pertubations(X1)
+            dX2 = pertubations(X2)
+
+            deltadot1 = 1 / np.sin(IR) * np.sin(kep2[2]) * np.cos(deltas) * (dX1[3]-dX2[3])
+            deltadot2 = 1 / np.sin(IR) * np.sin(kep1[2]) * np.cos(deltap) * (dX1[3]-dX2[3])
+
+            T1 = new_period(K,kep1,dX1,deltadot1)
+            T2 = new_period(K,kep2,dX2,deltadot2)
 
     return True #Filter out
 
