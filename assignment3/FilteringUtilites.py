@@ -20,6 +20,30 @@ def pertubations(X):
                 }
     dX = int_salt_grav_drag(X,state_params)
     return dX
+def compute_dr2dt(dX1,dX2,rp,rs,kep1,kep2,IR,cos_gamma,urp,urs):
+    mu = 3.986004418e14
+    #Determine mean motion and n dot for object 1
+    n1 = np.sqrt(mu / kep1[0] ** 3)
+    ndot1 = -3 / 2 * dX1[0] * np.sqrt(mu / kep1[0] ** 5)
+    #Determine mean motion and n dot for object 2
+    n2 = np.sqrt(mu / kep2[0] ** 3)
+    ndot2 = -3 / 2 * dX2[0] * np.sqrt(mu / kep2[0] ** 5)
+
+    rp_dot = 2/3 * ndot1/n1 *(kep1[0] * (1 - kep1[1]) * np.cos(kep1[5]) - rp )
+    rs_dot = 2/3 * ndot2/n2 *(kep2[0] * (1 - kep2[1]) * np.cos(kep2[5]) - rs )
+
+    urp_dot = 1 / (1 - kep1[1]**2) * (2 + kep1[1] * np.cos(kep1[5])) * np.sin(kep1[5] * dX1[1]) + dX1[4]
+    urs_dot = 1 / (1 - kep2[1]**2) * (2 + kep2[1] * np.cos(kep2[5])) * np.sin(kep2[5] * dX2[1]) + dX2[4]
+
+    dr2dt = (2 * rp_dot * (rp - rs * cos_gamma) +
+        2 * rs_dot * (rs - rs * cos_gamma) -
+        2 * rp * rs * ( (np.cos(urp) * np.sin(urs) * np.cos(IR) - np.sin(urp) * np.cos(urs) ) * urp_dot +
+                       (np.sin(urp) * np.cos(urs) * np.cos(IR) - np.cos(urp) * np.sin(urs) ) * urs_dot   -
+                       (np.sin(urp) * np.sin(urs) * np.sin(IR) ))
+
+    )
+    return dr2dt
+
 
 def new_period(K,kep,dX,deltadot):
     """
@@ -220,13 +244,26 @@ def geometrical_filter(X1, X2, Dthres):
 
         # Calculate the relative distance squared
         r_rel_sq = rp ** 2 + rs ** 2 - 2 * rp * rs * cos_gamma
-        list_r_rel.append(np.sqrt(r_rel_sq))
+        use_perturbations = False
+        if use_perturbations:
+            dX1 = pertubations(kep1)
+            dX2 = pertubations(kep2)
+            dr2dt = compute_dr2dt(dX1, dX2, rp, rs, kep1, kep2, IR, cos_gamma, urp, urs)
+            r_rel_sq_1 = r_rel_sq + dr2dt * 24 * 3600
+            r_rel_sq_2 = r_rel_sq - dr2dt * 24 * 3600
+
+
+            list_r_rel.append(r_rel_sq_1)
+            list_r_rel.append(r_rel_sq_2)
+        else:
+            list_r_rel.append(r_rel_sq)
+
 
     # Check if the relative distance is less than D
-    if list_r_rel[0] > Dthres and list_r_rel[1] > Dthres:
-
+    if all(x>Dthres**2 for x in list_r_rel):
         return True  #Filter out
     else:
+
         return False # Keep for further analysis
 
 
@@ -263,13 +300,18 @@ def time_filter(X1, X2, D):
     ay_1 = e_1 * np.sin(kep1[4] - kep1[3])
     Q_1 = alpha_1 * (alpha_1 - 2*D*ay_1) - (1-e_1**2)*D**2
 
+    # Test from Hoots
+    if Q_1 < 0:
+        return False
+
     #To simplify calculations
     to_solve_1 = (-D**2*ax_1 + (alpha_1-D*ay_1)*np.sqrt(Q_1))/(alpha_1*(alpha_1 - 2*D*ay_1)+D**2*e_1**2)
     to_solve_2 = (-D**2*ax_1 - (alpha_1-D*ay_1)*np.sqrt(Q_1))/(alpha_1*(alpha_1 - 2*D*ay_1)+D**2*e_1**2)
 
-    #Test from Hoots
-    if Q_1 < 0 or np.abs(to_solve_1) > 1 or np.abs(to_solve_2) > 1 :
+    if np.abs(to_solve_1) > 1 or np.abs(to_solve_2) > 1:
         return False
+
+
 
     #Determine ur1 and ur2
     ur1 = np.arccos(to_solve_1)
@@ -285,6 +327,9 @@ def time_filter(X1, X2, D):
     ax_2 = e_2 * np.cos(kep2[4] - kep2[3])
     ay_2 = e_2 * np.sin(kep2[4] - kep2[3])
     Q_2 = alpha_2 * (alpha_2 - 2 * D * ay_2) - (1 - e_2 ** 2) * D ** 2
+
+    if Q_2 < 0:
+        return False
 
     #To simplify calculations
     to_solve_3 = (-D ** 2 * ax_2 + (alpha_2 - D * ay_2) * np.sqrt(Q_2)) / (alpha_2 * (alpha_2 - 2 * D * ay_2) + D ** 2 * e_2 ** 2)
@@ -334,15 +379,18 @@ def time_filter(X1, X2, D):
         else:
             K = K + 1
             dt = dt + max(T1, T2)
+            use_pertubations = True
+            if use_pertubations:
+                dX1 = pertubations(kep1)
+                dX2 = pertubations(kep2)
 
-            dX1 = pertubations(X1)
-            dX2 = pertubations(X2)
+                deltadot1 = 1 / np.sin(IR) * np.sin(kep2[2]) * np.cos(deltas) * (dX1[3]-dX2[3])
+                deltadot2 = 1 / np.sin(IR) * np.sin(kep1[2]) * np.cos(deltap) * (dX1[3]-dX2[3])
 
-            deltadot1 = 1 / np.sin(IR) * np.sin(kep2[2]) * np.cos(deltas) * (dX1[3]-dX2[3])
-            deltadot2 = 1 / np.sin(IR) * np.sin(kep1[2]) * np.cos(deltap) * (dX1[3]-dX2[3])
+                T1 = new_period(K,kep1,dX1,deltadot1)
+                T2 = new_period(K,kep2,dX2,deltadot2)
 
-            T1 = new_period(K,kep1,dX1,deltadot1)
-            T2 = new_period(K,kep2,dX2,deltadot2)
+
 
     return True #Filter out
 
