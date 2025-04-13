@@ -1133,7 +1133,7 @@ def lgwt(N,a,b):
     return x_vect, w_vect
 
 
-def int_salt_grav_drag(t, X, params):
+def int_salt_grav_drag(X, params):
     '''
     This function computes the derivatives for the Semi-Analytic Liu Theory
     orbit propagator, to be used with a numerical integrator such as RK4.

@@ -16,7 +16,7 @@ def pertubations(X):
                     'mass':  100.0,
                     'area': 1.0,
                     'Cd':  2.2,
-                    'Nquad': 8,
+                    'Nquad': 10,
                 }
     dX = int_salt_grav_drag(X,state_params)
     return dX
@@ -35,13 +35,14 @@ def compute_dr2dt(dX1,dX2,rp,rs,kep1,kep2,IR,cos_gamma,urp,urs):
     urp_dot = 1 / (1 - kep1[1]**2) * (2 + kep1[1] * np.cos(kep1[5])) * np.sin(kep1[5] * dX1[1]) + dX1[4]
     urs_dot = 1 / (1 - kep2[1]**2) * (2 + kep2[1] * np.cos(kep2[5])) * np.sin(kep2[5] * dX2[1]) + dX2[4]
 
-    dr2dt = (2 * rp_dot * (rp - rs * cos_gamma) +
-        2 * rs_dot * (rs - rs * cos_gamma) -
-        2 * rp * rs * ( (np.cos(urp) * np.sin(urs) * np.cos(IR) - np.sin(urp) * np.cos(urs) ) * urp_dot +
-                       (np.sin(urp) * np.cos(urs) * np.cos(IR) - np.cos(urp) * np.sin(urs) ) * urs_dot   -
-                       (np.sin(urp) * np.sin(urs) * np.sin(IR) ))
+    A = 2 * rp_dot * (rp - rs * cos_gamma)
+    B = 2 * rs_dot * (rs - rp * cos_gamma)
+    C = np.cos(urp) * np.sin(urp) * np.cos(IR) - np.sin(urp) * np.cos(urs)
+    D = np.sin(urp) * np.cos(urs) * np.cos(IR) - np.cos(urp) * np.sin(urp)
+    E = np.sin(urp)  * np.sin(urs) * np.sin(IR)
 
-    )
+    dr2dt = A + B - 2 * rp * rs * (urp_dot * C + urs_dot * D - E )
+
     return dr2dt
 
 
@@ -81,8 +82,6 @@ def apogee_perigee_filter(X1, X2, D):
     kep1 = ec.cartesian_to_keplerian(X1, 3.986004418e14)
     kep2 = ec.cartesian_to_keplerian(X2, 3.986004418e14)
 
-    # print(f"kep1: {kep1}, kep2: {kep2}")
-
     # Extract perigee and apogee
     q1 = kep1[0] * (1 - kep1[1])
     Q1 = kep1[0] * (1 + kep1[1])
@@ -93,7 +92,6 @@ def apogee_perigee_filter(X1, X2, D):
     q = max(q1, q2)
     # Define the smaller of the two apogees
     Q = min(Q1, Q2)
-    #print(f"q:{q}, Q: {Q},q - Q: {q-Q}")
 
     # Check if the objects can be filtered out
     if q - Q > D:
@@ -236,14 +234,14 @@ def geometrical_filter(X1, X2, Dthres):
             iterations += 1
             tol = 0.001
             if iterations > 100:
-                #print("Too many iterations")
                 not_converged = False
             if h < tol * np.pi/180 and k < tol * np.pi/180:
-                #print("New object")
                 not_converged = False
 
         # Calculate the relative distance squared
         r_rel_sq = rp ** 2 + rs ** 2 - 2 * rp * rs * cos_gamma
+
+        #Do not use perturbations on geometrical filter
         use_perturbations = False
         if use_perturbations:
             dX1 = pertubations(kep1)
@@ -251,10 +249,8 @@ def geometrical_filter(X1, X2, Dthres):
             dr2dt = compute_dr2dt(dX1, dX2, rp, rs, kep1, kep2, IR, cos_gamma, urp, urs)
             r_rel_sq_1 = r_rel_sq + dr2dt * 24 * 3600
             r_rel_sq_2 = r_rel_sq - dr2dt * 24 * 3600
-
-
-            list_r_rel.append(r_rel_sq_1)
-            list_r_rel.append(r_rel_sq_2)
+            list_r_rel.append(np.abs(r_rel_sq_1))
+            list_r_rel.append(np.abs(r_rel_sq_2))
         else:
             list_r_rel.append(r_rel_sq)
 
