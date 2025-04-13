@@ -14,10 +14,19 @@ from tudatpy.astro.two_body_dynamics import propagate_kepler_orbit
 
 # Function to convert from Cartesian to RTN coordinates
 def cartesian_to_rtn(X1, X2):
-    r1 = X1[:3]
-    v1 = X1[3:]
-    r2 = X2[:3]
-    v2 = X2[3:]
+    r1 = np.array(X1[:3])
+    v1 = np.array(X1[3:])
+    r2 = np.array(X2[:3])
+    v2 = np.array(X2[3:])
+
+    r1 = r1.flatten()
+    v1 = v1.flatten()
+    r2 = r2.flatten()
+    v2 = v2.flatten()
+
+    print(r1, v1, r2, v2)
+    print("r1 shape:", r1.shape)
+    print("v1 shape:", v1.shape)
 
     r_rel = r2 - r1
     v_rel = v2 - v1
@@ -48,7 +57,7 @@ rso_file = os.path.join(assignment_data_directory, 'estimated_rso_catalog.pkl')
 rso_dict = ConjUtil.read_catalog_file(rso_file)
 
 # Step 2: Apply filtering to the catalog before propagation
-D = 100  # Distance threshold (meters)
+D = 100e3  # Distance threshold (meters)
 filtered_pairs = []
 
 print("Applying filtering to the catalog...")
@@ -61,7 +70,7 @@ for i in range(len(object_ids)):
         # Apply Apogee-Perigee Filter
         if apogee_perigee_filter(rso1['state'], rso2['state'], D):
             continue
-
+        #
         # # Apply Geometrical Filter
         # if geometrical_filter(rso1['state'], rso2['state'], D):
         #     continue
@@ -101,7 +110,7 @@ state_parameters = {}
 # Define common body creation list
 bodies_to_create = ['Sun', 'Earth', 'Moon']
 
-for obj1_id, obj2_id in filtered_pairs[:6]:
+for obj1_id, obj2_id in filtered_pairs:
     for obj_id in [obj1_id, obj2_id]:
         if obj_id not in propagated_states:
             print(f"Propagating object ID: {obj_id}")
@@ -139,7 +148,7 @@ print("State propagation completed for all filtered objects.")
 tca_results = {}
 start_time = time.time()
 
-for obj1_id, obj2_id in filtered_pairs[:6]:
+for obj1_id, obj2_id in filtered_pairs:
     print(f"Computing TCA for pair: ({obj1_id}, {obj2_id})")
 
     X1 = propagated_states[obj1_id]['state']
@@ -169,6 +178,8 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
     print(f"Relative Velocity RTN: {rel_vel_rtn}")
 
 # Step 9: Analyze TCA results and print CDM
+cdm_data = {}  # Initialize an empty dictionary to store CDM data
+
 for pair, result in tca_results.items():
     min_distance = min(result['rho_list'])
     tca_time = result['T_list'][result['rho_list'].index(min_distance)]
@@ -181,20 +192,32 @@ for pair, result in tca_results.items():
 
     # Risk analysis
     d2 = ConjUtil.compute_miss_distance(X1, X2)
-    dM = ConjUtil.compute_mahalanobis_distance(X1, X2)
+    dM = ConjUtil.compute_mahalanobis_distance(X1, X2, P1, P2)
     Pc = ConjUtil.Pc2D_Foster(X1, P1, X2, P2, D)
     Uc = ConjUtil.Uc2D(X1, P1, X2, P2, D)
 
     # Relative position and velocity in RTN
     rel_pos_rtn, rel_vel_rtn = cartesian_to_rtn(X1, X2)
 
-    # Print CDM
-    print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn)
+    # Print and store CDM
+    if min_distance < 5000:  # m
+        cdm_data[pair] = {
+            'TCA_Time': tca_time,
+            'Min_Distance': min_distance,
+            'dM': dM,
+            'Uc': Uc,
+            'Pc': Pc,
+            'Relative_Position_RTN': rel_pos_rtn,
+            'Relative_Velocity_RTN': rel_vel_rtn
+        }
+
+        # Optionally, print CDM for each pair
+        print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn)
 
 print("CDM generation completed.")
 
 # Step 7: Identify High Interest Events (HIEs)
-hie_threshold = 10  # meters
+hie_threshold = 1e3  # meters
 hie_results = {}
 
 for pair, data in tca_results.items():
@@ -218,6 +241,11 @@ output_dir = "assignment3/output_Q1"
 os.makedirs(output_dir, exist_ok=True)
 
 # Step 8: Save the results
+with open(os.path.join(output_dir, 'cdm_results.pkl'), 'wb') as f:
+    pickle.dump(cdm_data, f)
+
+print(f"CDM data has been saved.")
+
 with open(os.path.join(output_dir, 'tca_results.pkl'), 'wb') as f:
     pickle.dump(tca_results, f)
 
@@ -228,13 +256,12 @@ print("Results saved to:", output_dir)
 
 print("Results saved to files.")
 
-# Step 9: Generate Summary Report
+# Generate summary report
 print("\nHigh Interest Event Summary:")
 for pair, result in hie_results.items():
-    print(
-        f"Pair: {pair}, TCA: {result['tca']}, Miss Distance: {result['miss_distance']} m, Decision: {result['decision']}")
-
-
+    if result['decision'] == "Avoidance maneuver recommended":
+        print(
+            f"Pair: {pair}, TCA: {result['tca']}, Miss Distance: {result['miss_distance']} m, Decision: {result['decision']}")
 # # Debug: Propagate using Keplerian motion for 48 hours and plot
 # keplerian_positions = {}
 # for obj_id in rso_dict.keys():
