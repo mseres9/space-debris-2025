@@ -5,12 +5,14 @@ from itertools import combinations
 from datetime import datetime, timedelta
 from itertools import combinations
 import pickle
+import json
 import ConjunctionUtilities as ConjUtil
 import TudatPropagator as prop
 from FilteringUtilites import *
 from tudatpy.astro.element_conversion import cartesian_to_keplerian, keplerian_to_cartesian
 import matplotlib.pyplot as plt
 from tudatpy.astro.two_body_dynamics import propagate_kepler_orbit
+
 
 # Function to convert from Cartesian to RTN coordinates
 def cartesian_to_rtn(X1, X2):
@@ -24,9 +26,9 @@ def cartesian_to_rtn(X1, X2):
     r2 = r2.flatten()
     v2 = v2.flatten()
 
-    print(r1, v1, r2, v2)
-    print("r1 shape:", r1.shape)
-    print("v1 shape:", v1.shape)
+    # print(r1, v1, r2, v2)
+    # print("r1 shape:", r1.shape)
+    # print("v1 shape:", v1.shape)
 
     r_rel = r2 - r1
     v_rel = v2 - v1
@@ -103,24 +105,75 @@ int_params = {
     'atol': 1e-12
 }
 
-# Step 6: Propagate state and covariance for filtered objects
-propagated_states = {}
-state_parameters = {}
-
 # Define common body creation list
 bodies_to_create = ['Sun', 'Earth', 'Moon']
 
-for obj1_id, obj2_id in filtered_pairs:
+# Step 6: Compute TCA for each filtered pair
+tca_results = {}
+start_time = time.time()
+
+for obj1_id, obj2_id in filtered_pairs[:10]:
+    print(f"Computing TCA for pair: ({obj1_id}, {obj2_id})")
+
+    state_data1 = rso_dict[obj1_id]
+    state_data2 = rso_dict[obj2_id]
+
+    X1 = state_data1['state']
+    X2 = state_data2['state']
+
+    # Retrieve and set individual state parameters
+    rso1_params = {
+        'mass': state_data1.get('mass', 100.0),
+        'area': state_data1.get('area', 1.0),
+        'Cd': state_data1.get('Cd', 2.2),
+        'Cr': state_data1.get('Cr', 1.3),
+        'sph_deg': 8,
+        'sph_ord': 8,
+        'central_bodies': ['Earth'],
+        'bodies_to_create': bodies_to_create
+    }
+
+    rso2_params = {
+        'mass': state_data2.get('mass', 100.0),
+        'area': state_data2.get('area', 1.0),
+        'Cd': state_data2.get('Cd', 2.2),
+        'Cr': state_data2.get('Cr', 1.3),
+        'sph_deg': 8,
+        'sph_ord': 8,
+        'central_bodies': ['Earth'],
+        'bodies_to_create': bodies_to_create
+    }
+
+T_list, rho_list = ConjUtil.compute_TCA(X1, X2, trange, rso1_params, rso2_params, int_params, bodies)
+
+idx_min_rho = np.argmin(rho_list)
+tca_results[(obj1_id, obj2_id)] = {
+    'T_list': T_list,
+    'rho_list': rho_list,
+    'tca_time': T_list[idx_min_rho]
+}
+print(f"TCA computation completed in {time.time() - start_time:.2f} seconds.")
+
+
+# Step 7: Propagate state and covariance for filtered objects
+propagated_states = {}
+state_parameters = {}
+
+for (obj1_id, obj2_id), data in list(tca_results.items()):
+    tca_time = data['tca_time']
+    trange1 = np.array([t0, tca_time])
+
     for obj_id in [obj1_id, obj2_id]:
         if obj_id not in propagated_states:
             print(f"Propagating object ID: {obj_id}")
 
-            # Extract initial state and covariance from the catalog
             state_data = rso_dict[obj_id]
+
+            # Extract initial state and covariance from the catalog
             Xo = state_data['state']
             Po = state_data['covar']
 
-            # Set default state parameters as specified
+            # Retrieve and set default state parameters as specified
             state_params = {
                 'mass': state_data.get('mass', 100.0),
                 'area': state_data.get('area', 1.0),
@@ -134,7 +187,7 @@ for obj1_id, obj2_id in filtered_pairs:
 
             try:
                 # Propagate state and covariance
-                tout, Xout, Pout = prop.propagate_state_and_covar(Xo, Po, trange, state_params, int_params, bodies)
+                tout, Xout, Pout = prop.propagate_state_and_covar(Xo, Po, trange1, state_params, int_params, bodies)
                 propagated_states[obj_id] = {'time': tout, 'state': Xout, 'covar': Pout}
             except Exception as e:
                 print(f"Error propagating object ID {obj_id}: {e}")
@@ -144,32 +197,13 @@ for obj1_id, obj2_id in filtered_pairs:
 
 print("State propagation completed for all filtered objects.")
 
-# Step 7: Compute TCA for each filtered pair
-tca_results = {}
-start_time = time.time()
-
-for obj1_id, obj2_id in filtered_pairs:
-    print(f"Computing TCA for pair: ({obj1_id}, {obj2_id})")
-
-    X1 = propagated_states[obj1_id]['state']
-    X2 = propagated_states[obj2_id]['state']
-
-    rso1_params = state_parameters[obj1_id]
-    rso2_params = state_parameters[obj2_id]
-
-    T_list, rho_list = ConjUtil.compute_TCA(X1, X2, trange, rso1_params, rso2_params, int_params, bodies)
-
-    if T_list:
-        tca_results[(obj1_id, obj2_id)] = {'T_list':  [convert_to_tdb(t) for t in T_list], 'rho_list': rho_list}
-
-print(f"TCA computation completed in {time.time() - start_time:.2f} seconds.")
 
 # Step 8: Print results as a CDM
 def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, rel_vel_rtn):
     print(f"\nCDM for pair {pair}:")
     print(f"Object 1 ID: {pair[0]}")
     print(f"Object 2 ID: {pair[1]}")
-    print(f"TCA (TDB): {tca}")
+    print(f"TCA (TDB): {convert_to_tdb(tca)}")
     print(f"Miss Distance: {miss_distance:.3f} m")
     print(f"Mahalanobis Distance: {mahalanobis:.3f}")
     print(f"Outer Pc: {outer_pc:.3e}")
@@ -182,7 +216,7 @@ cdm_data = {}  # Initialize an empty dictionary to store CDM data
 
 for pair, result in tca_results.items():
     min_distance = min(result['rho_list'])
-    tca_time = result['T_list'][result['rho_list'].index(min_distance)]
+    tca_time = tca_results[(obj1_id, obj2_id)]['tca_time']
 
     X1 = propagated_states[obj1_id]['state']
     X2 = propagated_states[obj2_id]['state']
@@ -203,7 +237,7 @@ for pair, result in tca_results.items():
     if min_distance < 5000:  # m
         cdm_data[pair] = {
             'TCA_Time': tca_time,
-            'Min_Distance': min_distance,
+            'dE': d2,
             'dM': dM,
             'Uc': Uc,
             'Pc': Pc,
@@ -217,17 +251,19 @@ for pair, result in tca_results.items():
 print("CDM generation completed.")
 
 # Step 7: Identify High Interest Events (HIEs)
-hie_threshold = 1e3  # meters
+hie_r_threshold = 1e3  # meters, JAXA
+hie_Pc_trshold = 1e-4 # ESA
 hie_results = {}
 
-for pair, data in tca_results.items():
-    min_distance = min(data['rho_list'])
-    tca_time = data['T_list'][data['rho_list'].index(min_distance)]
+for pair, data in cdm_data.items():
+    min_distance = data['dE']
+    tca_time = data['tca_time']
+    Pc = data["Pc"]
 
-    if min_distance < hie_threshold:
-        decision = "Avoidance maneuver recommended"
+    if min_distance < hie_r_threshold or Pc > hie_Pc_trshold:
+        decision = f"HIE identified for pair: {pair}"
     else:
-        decision = "No maneuver required"
+        decision = "Not an HIE"
 
     hie_results[pair] = {
         'tca': tca_time,
@@ -241,17 +277,31 @@ output_dir = "assignment3/output_Q1"
 os.makedirs(output_dir, exist_ok=True)
 
 # Step 8: Save the results
-with open(os.path.join(output_dir, 'cdm_results.pkl'), 'wb') as f:
-    pickle.dump(cdm_data, f)
 
-print(f"CDM data has been saved.")
+# Helper function to convert complex types
+def convert_for_json(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj  # fallback
 
-with open(os.path.join(output_dir, 'tca_results.pkl'), 'wb') as f:
-    pickle.dump(tca_results, f)
+# Convert and save CDM data
+with open(os.path.join(output_dir, 'cdm_results.json'), 'w') as f:
+    json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
+               for k, v in cdm_data.items()}, f, indent=4)
 
-with open(os.path.join(output_dir, 'hie_results.pkl'), 'wb') as f:
-    pickle.dump(hie_results, f)
+# Convert and save TCA results
+with open(os.path.join(output_dir, 'tca_results.json'), 'w') as f:
+    json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
+               for k, v in tca_results.items()}, f, indent=4)
 
+# Convert and save HIE results
+with open(os.path.join(output_dir, 'hie_results.json'), 'w') as f:
+    json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
+               for k, v in hie_results.items()}, f, indent=4)
+
+print("All results have been saved as JSON.")
 print("Results saved to:", output_dir)
 
 print("Results saved to files.")
