@@ -60,31 +60,30 @@ rso_dict = ConjUtil.read_catalog_file(rso_file)
 
 # Step 2: Apply filtering to the catalog before propagation
 D = 100e3  # Distance threshold (meters)
+protected_id = 31698
 filtered_pairs = []
 
-print("Applying filtering to the catalog...")
+print("Filtering all potential threats to object", protected_id)
 object_ids = list(rso_dict.keys())
-for i in range(len(object_ids)):
-    for j in range(i + 1, len(object_ids)):
-        rso1 = rso_dict[object_ids[i]]
-        rso2 = rso_dict[object_ids[j]]
+object_ids.remove(protected_id)
 
-        # Apply Apogee-Perigee Filter
-        if apogee_perigee_filter(rso1['state'], rso2['state'], D):
-            continue
-        #
-        # # Apply Geometrical Filter
-        # if geometrical_filter(rso1['state'], rso2['state'], D):
-        #     continue
+for obj_id in object_ids:
+    rso1 = rso_dict[protected_id]
+    rso2 = rso_dict[obj_id]
 
-        # # Apply Time Filter
-        # if time_filter(rso1['state'], rso2['state'], D):
-        #     continue
+    if apogee_perigee_filter(rso1['state'], rso2['state'], D):
+        continue
 
-        # If all filters pass, store the pair
-        filtered_pairs.append((object_ids[i], object_ids[j]))
+    # Optionally uncomment if needed later
+    # if geometrical_filter(rso1['state'], rso2['state'], D):
+    #     continue
 
-print(f"Filtering completed: {len(filtered_pairs)} pairs selected.")
+    # if time_filter(rso1['state'], rso2['state'], D):
+    #     continue
+
+    filtered_pairs.append((protected_id, obj_id))
+
+print(f"Filtering completed: {len(filtered_pairs)} potential threat pairs selected.")
 
 # Step 3: Define initial and final time
 t0 = (datetime(2025, 4, 1, 12, 0, 0) - datetime(2000, 1, 1, 12, 0, 0)).total_seconds()
@@ -144,14 +143,14 @@ for obj1_id, obj2_id in filtered_pairs[:10]:
         'bodies_to_create': bodies_to_create
     }
 
-T_list, rho_list = ConjUtil.compute_TCA(X1, X2, trange, rso1_params, rso2_params, int_params, bodies)
+    T_list, rho_list = ConjUtil.compute_TCA(X1, X2, trange, rso1_params, rso2_params, int_params, bodies)
 
-idx_min_rho = np.argmin(rho_list)
-tca_results[(obj1_id, obj2_id)] = {
-    'T_list': T_list,
-    'rho_list': rho_list,
-    'tca_time': T_list[idx_min_rho]
-}
+    idx_min_rho = np.argmin(rho_list)
+    tca_results[(obj1_id, obj2_id)] = {
+        'T_list': T_list,
+        'rho_list': rho_list,
+        'tca_time': T_list[idx_min_rho]
+    }
 print(f"TCA computation completed in {time.time() - start_time:.2f} seconds.")
 
 
