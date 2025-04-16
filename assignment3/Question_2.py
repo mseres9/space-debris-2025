@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 import TudatPropagator as prop
 import matplotlib.pyplot as plt
-from tudatpy.astro import two_body_dynamics
+from tudatpy.astro import two_body_dynamics, time_conversion
 
 # Set up function to transform celestial coordinates to ECI
 def cel2eci(y_cel_list):
@@ -95,6 +95,12 @@ states_ukf = np.array(states_ukf)
 covs_ukf = np.array(covs_ukf)
 resids_ukf = np.array(resids_ukf)
 print(f"dV between: {tk[121]} and {tk[122]}")
+
+t_days_start = time_conversion.seconds_since_epoch_to_julian_day(tk[121])
+t_days_end = time_conversion.seconds_since_epoch_to_julian_day(tk[122])
+t_cal_start = time_conversion.julian_day_to_calendar_date(t_days_start)
+t_cal_end = time_conversion.julian_day_to_calendar_date(t_days_end)
+print(f"Manoeuvre between {t_cal_start} and {t_cal_end}")
 
 # Propagate forward from first UKF point
 t_prop, states_prop = prop.propagate_orbit(states_ukf[0, :], [times_ukf[0], times_ukf[-1]], state_params, int_params, bodies)
