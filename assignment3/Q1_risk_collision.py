@@ -13,7 +13,7 @@ from tudatpy.astro.element_conversion import cartesian_to_keplerian, keplerian_t
 import matplotlib.pyplot as plt
 from tudatpy.astro.two_body_dynamics import propagate_kepler_orbit
 
-from assignment3.ConjunctionUtilities import eci2ric
+from assignment3.ConjunctionUtilities import eci2ric, eci2ric_vel
 
 
 # Function to format the TCA as a TDB calendar date
@@ -44,8 +44,8 @@ for obj_id in object_ids:
     if apogee_perigee_filter(rso1['state'], rso2['state'], D):
         continue
 
-    if geometrical_filter(rso1['state'], rso2['state'], D):
-        continue
+    # if geometrical_filter(rso1['state'], rso2['state'], D):
+    #     continue
 
     # if time_filter(rso1['state'], rso2['state'], D):
     #     continue
@@ -205,8 +205,8 @@ for pair, result in tca_results.items():
 
     # Relative position and velocity in RTN
     x_diff = X1-X2
-    rel_pos_rtn = eci2ric(X1[:3],X2[:3],x_diff[:3])
-    rel_vel_rtn = eci2ric(X1[3:],X2[:3],x_diff[3:])
+    rel_pos_rtn = eci2ric(X1[:3],X1[3:],x_diff[:3])
+    rel_vel_rtn = eci2ric_vel(X1[:3],X1[3:],rel_pos_rtn,x_diff[3:])
 
     # Print and store the results in CDM
     if min_distance < 5000:  # 5000m
@@ -231,7 +231,6 @@ print("CDM generation completed.")
 
 # Step 7: Identify High Interest Events (HIEs)
 hie_r_threshold = 1e4  # 1e3 meters, JAXA
-hie_E_treshold = 200 #todo: check this reference for high impact events and make sure that it comes from literature
 hie_Pc_trshold = 1e-6 # 1e-4 ESA
 #todo: add mahalanobis here minore 4.6 per assicurare sulla probabilità di impatto
 # TODO: what are delande and foster? Implement
