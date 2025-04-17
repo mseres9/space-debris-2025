@@ -73,9 +73,6 @@ int_params = {
     'atol': 1e-12
 }
 
-# Define common body creation list
-bodies_to_create = ['Sun', 'Earth', 'Moon']
-
 # Step 6: Compute TCA for each filtered pair
 tca_results = {}
 start_time = time.time()
@@ -143,10 +140,10 @@ for (obj1_id, obj2_id), data in list(tca_results.items()):
 
             # Retrieve and set default state parameters as specified
             state_params = {
-                'mass': state_data.get('mass', 100.0),
-                'area': state_data.get('area', 1.0),
-                'Cd': state_data.get('Cd', 2.2),
-                'Cr': state_data.get('Cr', 1.3),
+                'mass': state_data.get('mass'),
+                'area': state_data.get('area'),
+                'Cd': state_data.get('Cd'),
+                'Cr': state_data.get('Cr'),
                 'sph_deg': 8,
                 'sph_ord': 8,
                 'central_bodies': ['Earth'],
