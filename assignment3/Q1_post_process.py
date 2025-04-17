@@ -31,6 +31,7 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
     print(f"Relative Velocity RTN: {rel_vel_rtn}")
     if decision:
         print(f"Decision: {decision}")
+
 # Load datasets
 assignment_data_directory = 'data/group4'
 rso_file = os.path.join(assignment_data_directory, 'estimated_rso_catalog.pkl')
@@ -156,7 +157,7 @@ for pair, data in tca_data.items():
     }
 
     # Alert generation based on Pc
-    if Pc > 1e-7:
+    if Pc > 1e-7 or min_distance < 5000:
         # Yellow alert level
         print(f"Yellow alert: Collision Risk identified for pair {pair}")
         # Store the alert
