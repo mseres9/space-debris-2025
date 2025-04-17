@@ -4,9 +4,9 @@ import numpy as np
 import seaborn as sns
 import TudatPropagator as prop
 import matplotlib.pyplot as plt
-from tudatpy.astro import two_body_dynamics
+from tudatpy.astro import two_body_dynamics, time_conversion
 
-# Set up functions
+# Set up function to transform celestial coordinates to ECI
 def cel2eci(y_cel_list):
     '''
     This function converts celestial coordinates to ECI
@@ -96,6 +96,12 @@ covs_ukf = np.array(covs_ukf)
 resids_ukf = np.array(resids_ukf)
 print(f"dV between: {tk[121]} and {tk[122]}")
 
+t_days_start = time_conversion.seconds_since_epoch_to_julian_day(tk[121])
+t_days_end = time_conversion.seconds_since_epoch_to_julian_day(tk[122])
+t_cal_start = time_conversion.julian_day_to_calendar_date(t_days_start)
+t_cal_end = time_conversion.julian_day_to_calendar_date(t_days_end)
+print(f"Manoeuvre between {t_cal_start} and {t_cal_end}")
+
 # Propagate forward from first UKF point
 t_prop, states_prop = prop.propagate_orbit(states_ukf[0, :], [times_ukf[0], times_ukf[-1]], state_params, int_params, bodies)
 
@@ -108,20 +114,23 @@ for i, t in enumerate(tk):
     r_eci[i, :] += np.matmul(ecef2eci, sensor_ecef)
 
 ############# Plotting for initial analysis #############
+plt.rcParams.update({'font.size': 16})
 # Plot residuals from UKF to show where manoeuvre happens
-plt.figure(figsize = (8,8))
-plt.plot(times_ukf[:122], np.linalg.norm(resids_ukf, axis=1)[:122])
-plt.scatter(times_ukf[:122], np.linalg.norm(resids_ukf, axis=1)[:122])
+plt.figure(figsize = (12,8))
+plt.plot(times_ukf[:122]-times_ukf[0], np.linalg.norm(resids_ukf, axis=1)[:122])
+plt.scatter(times_ukf[:122]-times_ukf[0], np.linalg.norm(resids_ukf, axis=1)[:122])
 plt.grid()
+plt.yscale('log')
 plt.xlabel('Time [s]')
 plt.ylabel('Residuals [m]')
 plt.savefig('plots\Q2_pre_dv_resids1.png')
 plt.show()
 
-plt.figure(figsize = (8,8))
-plt.plot(times_ukf[:146], np.linalg.norm(resids_ukf, axis=1)[:146])
-plt.scatter(times_ukf[:146], np.linalg.norm(resids_ukf, axis=1)[:146])
+plt.figure(figsize = (12,8))
+plt.plot(times_ukf[:146]-times_ukf[0], np.linalg.norm(resids_ukf, axis=1)[:146])
+plt.scatter(times_ukf[:146]-times_ukf[0], np.linalg.norm(resids_ukf, axis=1)[:146])
 plt.grid()
+plt.yscale('log')
 plt.xlabel('Time [s]')
 plt.ylabel('Residuals [m]')
 plt.savefig('plots\Q2_pre_dv_resids2.png')
@@ -134,34 +143,29 @@ plt.rcParams.update({'font.size': 11})
 fig, axs = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
 
 # First subplot
-axs[0].plot(t_prop, states_prop[:, 0]/1000, label='Propogated Orbit', color='blue')
+axs[0].plot(t_prop, states_prop[:, 0]/1000, label='Pre-Manoeuvre Orbit', color='blue')
 axs[0].scatter(tk, r_eci[:, 0]/1000, label='Observations', color='green')
-#axs[0].scatter(times, states[:, 0]/1000, color='red')
-axs[0].set_title('x component')
 axs[0].grid()
-axs[0].set_ylabel('x [km]')
-axs[0].legend()
+axs[0].set_ylabel('Inertial X Position [km]')
+axs[0].legend(loc="upper center", bbox_to_anchor=(0.5, 1.15), ncol=2, frameon=False)
 
 # Second subplot
 axs[1].plot(t_prop, states_prop[:, 1]/1000, color='blue')
 axs[1].scatter(tk, r_eci[:, 1]/1000, color='green')
-#axs[1].scatter(times, states[:, 1]/1000, label='UKF', color='red')
-axs[1].set_title('y component')
 axs[1].grid()
-axs[1].set_ylabel('y [km]')
+axs[1].set_ylabel('Inertial Y Position [km]')
 
 # Third subplot
 axs[2].plot(t_prop, states_prop[:, 2]/1000, color='blue')
 axs[2].scatter(tk, r_eci[:, 2]/1000, color='green')
-#axs[2].scatter(times, states[:, 2]/1000, color='red')
-axs[2].set_title('z component')
 axs[2].grid()
-axs[2].set_ylabel('z [km]')
+axs[2].set_ylabel('Inertial Z Position [km]')
 
 # Add a common x-label
-plt.xlabel('Time since start (s)')
+plt.xlabel('Time since J2000 [s]')
 # Adjust layout to prevent overlap
 plt.tight_layout()
+plt.savefig('plots/Q2_pre_dv_orbit.png')
 # Show plot
 plt.show()
 
@@ -243,18 +247,21 @@ def generate_noisy_eci_measurements(Yk_trimmed, tk_trimmed):
 # Set up lists to store results of state at dv
 states_at_dv = list()
 
+# Set number of first, last, and MC to use
+N_1, N_2, N_MC = 6, 6, 200
+
 # Loop through points to use for lambert arc, and fit lambert arcs
-for i in range(5):
+for i in range(N_1):
     # Define first point of lambert arc
     idx1 = 122+i
-    for j in range(5):
+    for j in range(N_2):
         print(f"#################### INIITAL POINT {i+1}, FINAL POINT {j+1} ####################")
         # Define second point of Lambert arc
         idx2 = 145-j
 
         # Set up MC for 100 runs
-        for k in range(100):
-            if (k+1)%10 == 0:
+        for k in range(N_MC):
+            if (k+1)%25 == 0:
                 print(f"{k+1} MC runs done ...")
             # Retrieve relevant measurements
             Yk_trim = [Yk[idx1], Yk[idx2]]
@@ -266,15 +273,15 @@ for i in range(5):
             # Fit lambert arc
             state1, state2 = get_lambert_problem_result(tk[idx1], tk[idx2], r1_eci_noisy, r2_eci_noisy)
 
-            # If first point is not at idx 122 propagate state 1 back with unperturbed
-            if idx1 != 122:
-                _, states_inter1 = prop.propagate_orbit(state1, [tk[idx1], tk[122]], state_params_unperturbed, int_params_MC)
-                state_at_dv_estimate = states_inter1[-1]
+            # If first point is not at idx 121 propagate state 1 back with unperturbed
+            if idx1 != 121:
+                _, states_inter1 = prop.propagate_orbit(state1, [tk[idx1], tk[121]], state_params_unperturbed, int_params_MC)
+                state_at_dv_estimate = states_inter1[0]
             else:
                 state_at_dv_estimate = state1
 
             # Calculate estimated dv
-            dv_estimate = np.linalg.norm((state_at_dv_estimate - states_ukf[122].reshape(6))[3:])
+            dv_estimate = np.linalg.norm((state_at_dv_estimate - states_ukf[121].reshape(6))[3:])
 
             # Update state params for second point of lambert arc
             state_params_MC = state_params.copy()
@@ -283,7 +290,7 @@ for i in range(5):
             state_params_MC['state'] = state2
 
             # Propagate second state from lambert arc backwards with perturbations
-            _, states_inter2 = prop.propagate_orbit(state2, [tk[idx2], tk[122]], state_params_MC, int_params_MC)
+            _, states_inter2 = prop.propagate_orbit(state2, [tk[idx2], tk[121]], state_params_MC, int_params_MC)
             state_at_dv = states_inter2[0]
 
             # Save estimated state
@@ -296,25 +303,26 @@ states_at_dv = np.array(states_at_dv)
 # Get means and cov of states at dv and dv itself
 mean_state_at_dv = np.mean(states_at_dv, axis=0)
 cov_state_at_dv = np.cov(states_at_dv.T)
-dv_array = np.array(states_at_dv - states_ukf[122].reshape(6))[:, 3:]
+dv_array = np.array(states_at_dv - states_ukf[121].reshape(6))[:, 3:]
 mean_dv = np.mean(dv_array, axis=0)
 cov_dv = np.cov(dv_array.T)
 
 # Update state parameters
 state_params_after_dv = state_params.copy()
 state_params_after_dv['mass'] = state_params['mass'] / np.exp(np.linalg.norm(mean_dv)/(220*9.80665))
-state_params_after_dv['epoch_tdb'] = tk[122]
+state_params_after_dv['epoch_tdb'] = tk[121]
 state_params_after_dv['state'] = mean_state_at_dv.reshape(6,1)
 state_params_after_dv['covar'] = cov_state_at_dv
 
 # Propagate final orbit estimate with perturbations and dv applied
-t_after_dv, states_after_dv = prop.propagate_orbit(mean_state_at_dv, [tk[122], tk[-1]], state_params_after_dv, int_params)
+t_after_dv, states_after_dv = prop.propagate_orbit(mean_state_at_dv, [tk[121], tk[-1]], state_params_after_dv, int_params)
 
 # Propagate covariance to get uncertainty in final state
-t_final, state_final, cov_final  = prop.propagate_state_and_covar(mean_state_at_dv.reshape(6,1), cov_state_at_dv, [tk[122], tk[-1]], state_params_after_dv, int_params)
+t_final, state_final, cov_final  = prop.propagate_state_and_covar(mean_state_at_dv.reshape(6,1), cov_state_at_dv, [tk[121], tk[-1]], state_params_after_dv, int_params)
 
 # Print final output
 print("####### FINAL OUTPUT #######")
+print("Assumed time of manoeuvre:", tk[122])
 print("Mean state at dv:", mean_state_at_dv)
 print("Covariance of state at dv:\n", cov_state_at_dv)
 print("Mean delta-V Mag:", np.linalg.norm(mean_dv))
@@ -351,26 +359,26 @@ plt.rcParams.update({'font.size': 11})
 # Plot comparison
 fig, axs = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
 
-axs[0].scatter(tk, r_eci[:,0]/1000, color='green', marker='o', label='Measured')
-axs[0].plot(t_after_dv, states_after_dv[:,0]/1000, 'b-', label='Post-Manoeuvre')
-axs[0].plot(t_prop, states_prop[:, 0]/1000, 'r:', label='Pre-Manoeuvre')
+axs[0].scatter(tk, r_eci[:,0]/1000, color='green', marker='o', label='Observations')
+axs[0].plot(t_after_dv, states_after_dv[:,0]/1000, 'b-', label='Post-Manoeuvre Orbit')
+axs[0].plot(t_prop, states_prop[:, 0]/1000, 'r:', label='Pre-Manoeuvre Orbit')
 axs[0].grid()
-axs[0].legend()
-axs[0].set_ylabel('X [km]')
+axs[0].legend(loc="upper center", bbox_to_anchor=(0.5, 1.15), ncol=3, frameon=False)
+axs[0].set_ylabel('Inertial X Position [km]')
 
 axs[1].scatter(tk, r_eci[:,1]/1000, color='green', marker='o')
 axs[1].plot(t_after_dv, states_after_dv[:,1]/1000, 'b-')
 axs[1].plot(t_prop, states_prop[:, 1]/1000, 'r:')
 axs[1].grid()
-axs[1].set_ylabel('Y [km]')
+axs[1].set_ylabel('Inertial Y Position [km]')
 
 axs[2].scatter(tk, r_eci[:,2]/1000, color='green', marker='o')
 axs[2].plot(t_after_dv, states_after_dv[:,2]/1000, 'b-')
 axs[2].plot(t_prop, states_prop[:, 2]/1000, 'r:')
 axs[2].grid()
-axs[2].set_ylabel('Z [km]')
+axs[2].set_ylabel('Inertial Z Position [km]')
 
-plt.xlabel('Time')
+plt.xlabel('Time since J2000 [s]')
 plt.tight_layout()
 plt.savefig('plots/Q2_post_dv_orbit.png')
 plt.show()
@@ -423,7 +431,7 @@ for i in range(3):
     plt.xlabel("Value", fontsize=14)
     plt.ylabel("Frequency", fontsize=14)
 
-    # Plot histogram with edges
+    # Plot histogram
     counts, bins, patches = plt.hist(states_at_dv[:, i + 3], bins=30, alpha=0.5, edgecolor='black',
                                      color=colors[1])
 
@@ -491,3 +499,13 @@ sns.heatmap(np.abs(corr_dv), xticklabels=labels, yticklabels=labels,annot=False,
 plt.tight_layout()
 plt.savefig('plots/Q2_corr_dv.png')
 plt.show()
+
+####################################################################################################
+############################################## PART C ##############################################
+####################################################################################################
+
+# Time of dv: tk[122]
+
+# State after dv: mean_state_at_dv
+
+# Covariance of state after dv: cov_state_at_dv
