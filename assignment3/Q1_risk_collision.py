@@ -47,8 +47,8 @@ for obj_id in object_ids:
     if geometrical_filter(rso1['state'], rso2['state'], D):
         continue
 
-    if time_filter(rso1['state'], rso2['state'], D):
-        continue
+    # if time_filter(rso1['state'], rso2['state'], D):
+    #     continue
 
     filtered_pairs.append((protected_id, obj_id))
 
