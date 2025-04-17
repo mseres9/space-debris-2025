@@ -12,7 +12,6 @@ import TudatPropagator as prop
 from FilteringUtilites import *
 from assignment3.ConjunctionUtilities import eci2ric, eci2ric_vel
 
-# Function to load JSON file as dictionary
 
 def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, rel_vel_rtn):
     print(f"\nCDM for pair {pair}:")
@@ -88,6 +87,8 @@ for pair, result in cdm_data.items():
 
 print("CDM generation completed.")
 
+
+rel_vel_norm = list(np.linalg( for x in cdm_data_new[x]['rel_pos_rtn'])
 
 
 

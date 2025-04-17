@@ -16,7 +16,6 @@ from tudatpy.astro.two_body_dynamics import propagate_kepler_orbit
 from assignment3.ConjunctionUtilities import eci2ric, eci2ric_vel
 
 
-# Function to format the TCA as a TDB calendar date
 def convert_to_tdb(tca_seconds):
     base_date = datetime(2000, 1, 1, 12, 0, 0)  # J2000 epoch
     tca_date = base_date + timedelta(seconds=tca_seconds)
@@ -86,7 +85,6 @@ for obj1_id, obj2_id in filtered_pairs:
     X1 = state_data1['state']
     X2 = state_data2['state']
 
-    # Retrieve and set individual state parameters
     rso1_params = {
         'mass': state_data1.get('mass', 100.0),
         'area': state_data1.get('area', 1.0),
@@ -134,11 +132,9 @@ for (obj1_id, obj2_id), data in list(tca_results.items()):
 
             state_data = rso_dict[obj_id]
 
-            # Extract initial state and covariance from the catalog
             Xo = state_data['state']
             Po = state_data['covar']
 
-            # Retrieve and set default state parameters as specified
             state_params = {
                 'mass': state_data.get('mass'),
                 'area': state_data.get('area'),
@@ -151,7 +147,6 @@ for (obj1_id, obj2_id), data in list(tca_results.items()):
             }
 
             try:
-                # Propagate state and covariance
                 tout, Xout, Pout = prop.propagate_state_and_covar(Xo, Po, trange1, state_params, int_params, bodies)
                 propagated_states[obj_id] = {'time': tout, 'state': Xout, 'covar': Pout}
             except Exception as e:
@@ -180,32 +175,26 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
 cdm_data = {}  # Initialize an empty dictionary to store CDM data
 
 for pair, result in tca_results.items():
-    # Extracting the min distance and TCA time for the pair
     min_distance = min(result['rho_list'])
     tca_time = result['T_list'][result['rho_list'].index(min_distance)]
 
-    # Extract the states and covariance for both objects involved in the pair
     obj1_id, obj2_id = pair
     X1 = propagated_states[obj1_id]['state']
     X2 = propagated_states[obj2_id]['state']
     P1 = propagated_states[obj1_id]['covar']
     P2 = propagated_states[obj2_id]['covar']
 
-    # Calculate the radii based on the object areas
     r1 = np.sqrt(rso_dict[obj1_id]['area'] / (4 * np.pi))
     r2 = np.sqrt(rso_dict[obj2_id]['area'] / (4 * np.pi))
 
-    # Perform risk analysis
     dM = ConjUtil.compute_mahalanobis_distance(X1, X2, P1, P2)
     Pc = ConjUtil.Pc2D_Foster(X1, P1, X2, P2, r1 + r2)
     Uc = ConjUtil.Uc2D(X1, P1, X2, P2, r1 + r2)
 
-    # Relative position and velocity in RTN
     x_diff = X1-X2
     rel_pos_rtn = eci2ric(X1[:3],X1[3:],x_diff[:3])
     rel_vel_rtn = eci2ric_vel(X1[:3],X1[3:],rel_pos_rtn,x_diff[3:])
 
-    # Print and store the results in CDM
     if min_distance < 5000:  # 5000m
         cdm_data[pair] = {
             'State1': X1.tolist(),
@@ -221,7 +210,6 @@ for pair, result in tca_results.items():
             'Relative_Velocity_RTN': rel_vel_rtn.tolist()  # Ensure this is a list
         }
 
-        # Optionally, print the CDM for the current pair
         print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn)
 
 print("CDM generation completed.")
@@ -263,7 +251,6 @@ os.makedirs(output_dir, exist_ok=True)
 
 # Step 8: Save the results
 
-# Helper function to convert complex types
 def convert_for_json(obj):
     if isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -271,17 +258,14 @@ def convert_for_json(obj):
         return obj.isoformat()
     return obj  # fallback
 
-# Convert and save CDM data
 with open(os.path.join(output_dir, 'cdm_results.json'), 'w') as f:
     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
                for k, v in cdm_data.items()}, f, indent=4)
 
-# Convert and save TCA results
 with open(os.path.join(output_dir, 'tca_results.json'), 'w') as f:
     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
                for k, v in tca_results.items()}, f, indent=4)
 
-# Convert and save HIE results
 with open(os.path.join(output_dir, 'hie_results.json'), 'w') as f:
     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
                for k, v in hie_results.items()}, f, indent=4)
