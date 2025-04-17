@@ -5,10 +5,11 @@ from scipy.optimize import fsolve
 from astropy.constants import G, M_earth
 from tudatpy.astro import two_body_dynamics
 import TudatPropagator as prop
+import EstimationUtilities as EstUt
 
 # Load Data
 current_dir = os.getcwd()
-with open(os.path.join(current_dir, 'Assignment3\data\group4\q4_meas_iod_99004 (1).pkl'), 'rb') as f:
+with open(os.path.join(current_dir, 'data/group4/q4_meas_iod_99004 (1).pkl'), 'rb') as f:
     data = pickle.load(f)
 
 # Constants
@@ -22,9 +23,9 @@ bodies = prop.tudat_initialize_bodies(bodies_to_create)
 tk_list = data[2]["tk_list"]          # Time list
 Yk_list = data[2]["Yk_list"]          # Measurement list
 sensor_ecef = data[1]['sensor_ecef'].flatten()  # Sensor position in ECEF
-print(data[2]["tk_list"] )
+
 # Make sensor to eci
-796798230.0, 796798950.0
+# These are the epochs 796798230.0, 796798950.0
 # Extract first measurement
 rg, ra, dec = Yk_list[0].flatten()
 
@@ -51,6 +52,9 @@ r_eci_2 = ra_dec_to_eci(rg2, ra2, dec2, sensor_ecef, tk_list[1])
 dt = tk_list[1] - tk_list[0]
 v_eci_1 = (r_eci_2 - r_eci_1) / dt
 
+# Use Lamberts arc/problem from TUdat to solve the r1,t1 - r2,t2 problem!!
+
+
 # Convert Cartesian state to Keplerian orbital elements
 def cartesian_to_keplerian(r, v, mu):
     r_norm = np.linalg.norm(r)
@@ -67,8 +71,58 @@ def cartesian_to_keplerian(r, v, mu):
     theta = np.arccos(np.dot(e_vec, r) / (e * r_norm))
     return a, e, np.degrees(i), np.degrees(RAAN), np.degrees(omega), np.degrees(theta)
 
+
+
+# Monte Carlo for Uncertainty Estimation
+num_samples = 1000
+perturbation_scale = np.array([10.0, 0.001, 0.001])  # Std dev of noise for [range, RA, Dec]
+kepler_samples = []
+
+for i in range(num_samples):
+    noise = np.random.normal(0, perturbation_scale, size=3)
+    r_noisy = ra_dec_to_eci(rg + noise[0], ra + noise[1], dec + noise[2], sensor_ecef, tk_list[0])
+    v_noisy = (
+        ra_dec_to_eci(rg2 + noise[0], ra2 + noise[1], dec2 + noise[2], sensor_ecef, tk_list[0])
+        - r_noisy
+    ) / dt
+    kepler_samples.append(cartesian_to_keplerian(r_noisy, v_noisy, mu))
+
+kepler_samples = np.array(kepler_samples)
+covariance_matrix = np.cov(kepler_samples.T)
+
+print("\nUncertainty (Covariance Matrix of Keplerian Elements):")
+print(covariance_matrix)
+
+def get_lambert_problem_result(t1, t2, r1_eci, r2_eci):
+    mu_earth = bodies.get("Earth").gravitational_parameter
+
+    # Create Lambert targeter
+    lambertTargeter = two_body_dynamics.LambertTargeterIzzo(
+        r1_eci,
+        r2_eci,
+        t2 - t1,
+        mu_earth,
+        is_retrograde=True,
+    )
+
+    # Compute initial Cartesian state of Lambert arc
+    lambert_arc_initial_state  = np.zeros(6)
+    lambert_arc_initial_state[:3] = r1_eci.flatten()
+    lambert_arc_initial_state[3:] = lambertTargeter.get_departure_velocity()
+
+    lambert_arc_final_state = np.zeros(6)
+    lambert_arc_final_state[:3] = r2_eci.flatten()
+    lambert_arc_final_state[3:] = lambertTargeter.get_arrival_velocity()
+
+    return lambert_arc_initial_state, lambert_arc_final_state
+
+state_1, state_2 = get_lambert_problem_result(tk_list[0], tk_list[1], r_eci_1, r_eci_2)
+
+print('Initial state:', state_1)
+print("Final state:", state_2)
+
 # Compute orbital elements
-keplerian_elements = cartesian_to_keplerian(r_eci_1, v_eci_1, mu)
+keplerian_elements = cartesian_to_keplerian(state_1[0:3], state_1[3:], mu)
 
 # Display results
 print("Keplerian Elements at Initial Measurement Time:")
@@ -78,23 +132,3 @@ print(f"Inclination (i): {keplerian_elements[2]:.2f} degrees")
 print(f"RAAN: {keplerian_elements[3]:.2f} degrees")
 print(f"Argument of Periapsis (omega): {keplerian_elements[4]:.2f} degrees")
 print(f"True Anomaly (theta): {keplerian_elements[5]:.2f} degrees")
-
-# Monte Carlo for Uncertainty Estimation
-num_samples = 1000
-perturbation_scale = np.array([10.0, 0.001, 0.001])  # Std dev of noise for [range, RA, Dec]
-kepler_samples = []
-
-for i in range(num_samples):
-    noise = np.random.normal(0, perturbation_scale, size=3)
-    r_noisy = ra_dec_to_eci(rg + noise[0], ra + noise[1], dec + noise[2], sensor_ecef)
-    v_noisy = (
-        ra_dec_to_eci(rg2 + noise[0], ra2 + noise[1], dec2 + noise[2], sensor_ecef)
-        - r_noisy
-    ) / dt
-    kepler_samples.append(cartesian_to_keplerian(r_noisy, v_noisy, mu))
-
-kepler_samples = np.array(kepler_samples)
-covariance_matrix = np.cov(kepler_samples.T)
-
-#print("\nUncertainty (Covariance Matrix of Keplerian Elements):")
-#print(covariance_matrix)
