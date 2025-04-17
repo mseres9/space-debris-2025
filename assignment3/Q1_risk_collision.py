@@ -13,38 +13,8 @@ from tudatpy.astro.element_conversion import cartesian_to_keplerian, keplerian_t
 import matplotlib.pyplot as plt
 from tudatpy.astro.two_body_dynamics import propagate_kepler_orbit
 
+from assignment3.ConjunctionUtilities import eci2ric
 
-# Function to convert from Cartesian to RTN coordinates
-def cartesian_to_rtn(X1, X2):
-    r1 = np.array(X1[:3])
-    v1 = np.array(X1[3:])
-    r2 = np.array(X2[:3])
-    v2 = np.array(X2[3:])
-
-    r1 = r1.flatten()
-    v1 = v1.flatten()
-    r2 = r2.flatten()
-    v2 = v2.flatten()
-
-    # print(r1, v1, r2, v2)
-    # print("r1 shape:", r1.shape)
-    # print("v1 shape:", v1.shape)
-
-    r_rel = r2 - r1
-    v_rel = v2 - v1
-
-    r_norm = np.linalg.norm(r1)
-    r_hat = r1 / r_norm
-    h = np.cross(r1, v1)
-    h_hat = h / np.linalg.norm(h)
-    t_hat = np.cross(h_hat, r_hat)
-
-    R = np.vstack((r_hat, t_hat, h_hat)).T
-
-    rel_pos_rtn = R @ r_rel
-    rel_vel_rtn = R @ v_rel
-
-    return rel_pos_rtn, rel_vel_rtn
 
 # Function to format the TCA as a TDB calendar date
 def convert_to_tdb(tca_seconds):
@@ -74,12 +44,11 @@ for obj_id in object_ids:
     if apogee_perigee_filter(rso1['state'], rso2['state'], D):
         continue
 
-    # Optionally uncomment if needed later
-    # if geometrical_filter(rso1['state'], rso2['state'], D):
-    #     continue
+    if geometrical_filter(rso1['state'], rso2['state'], D):
+        continue
 
-    # if time_filter(rso1['state'], rso2['state'], D):
-    #     continue
+    if time_filter(rso1['state'], rso2['state'], D):
+        continue
 
     filtered_pairs.append((protected_id, obj_id))
 
@@ -111,7 +80,7 @@ bodies_to_create = ['Sun', 'Earth', 'Moon']
 tca_results = {}
 start_time = time.time()
 
-for obj1_id, obj2_id in filtered_pairs[:10]:
+for obj1_id, obj2_id in filtered_pairs:
     print(f"Computing TCA for pair: ({obj1_id}, {obj2_id})")
 
     state_data1 = rso_dict[obj1_id]
@@ -205,8 +174,8 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
     print(f"TCA (TDB): {convert_to_tdb(tca)}")
     print(f"Miss Distance: {miss_distance:.3f} m")
     print(f"Mahalanobis Distance: {mahalanobis:.3f}")
-    print(f"Outer Pc: {outer_pc:.3e}")
-    print(f"Pc: {pc:.3e}")
+    print(f"Outer Pc: {outer_pc:.3f}")
+    print(f"Pc: {pc:.3f}")
     print(f"Relative Position RTN: {rel_pos_rtn}")
     print(f"Relative Velocity RTN: {rel_vel_rtn}")
 
@@ -214,50 +183,68 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
 cdm_data = {}  # Initialize an empty dictionary to store CDM data
 
 for pair, result in tca_results.items():
+    # Extracting the min distance and TCA time for the pair
     min_distance = min(result['rho_list'])
-    tca_time = tca_results[(obj1_id, obj2_id)]['tca_time']
+    tca_time = result['T_list'][result['rho_list'].index(min_distance)]
 
+    # Extract the states and covariance for both objects involved in the pair
+    obj1_id, obj2_id = pair
     X1 = propagated_states[obj1_id]['state']
     X2 = propagated_states[obj2_id]['state']
-
     P1 = propagated_states[obj1_id]['covar']
     P2 = propagated_states[obj2_id]['covar']
 
-    # Risk analysis
-    d2 = ConjUtil.compute_miss_distance(X1, X2)
+    # Calculate the radii based on the object areas
+    r1 = np.sqrt(rso_dict[obj1_id]['area'] / (4 * np.pi))
+    r2 = np.sqrt(rso_dict[obj2_id]['area'] / (4 * np.pi))
+
+    # Perform risk analysis
     dM = ConjUtil.compute_mahalanobis_distance(X1, X2, P1, P2)
-    Pc = ConjUtil.Pc2D_Foster(X1, P1, X2, P2, D)
-    Uc = ConjUtil.Uc2D(X1, P1, X2, P2, D)
+    Pc = ConjUtil.Pc2D_Foster(X1, P1, X2, P2, r1 + r2)
+    Uc = ConjUtil.Uc2D(X1, P1, X2, P2, r1 + r2)
 
     # Relative position and velocity in RTN
-    rel_pos_rtn, rel_vel_rtn = cartesian_to_rtn(X1, X2)
+    x_diff = X1-X2
+    rel_pos_rtn = eci2ric(X1[:3],X2[:3],x_diff[:3])
+    rel_vel_rtn = eci2ric(X1[3:],X2[:3],x_diff[3:])
 
-    # Print and store CDM
-    if min_distance < 5000:  # m
+    # Print and store the results in CDM
+    if min_distance < 5000:  # 5000m
         cdm_data[pair] = {
+            'State1': X1.tolist(),
+            'State2': X2.tolist(),
+            'Covariance1':P1.tolist(),
+            'Covariance2':P2.tolist(),
             'TCA_Time': tca_time,
-            'dE': d2,
+            'dE': min_distance,
             'dM': dM,
             'Uc': Uc,
             'Pc': Pc,
-            'Relative_Position_RTN': rel_pos_rtn,
-            'Relative_Velocity_RTN': rel_vel_rtn
+            'Relative_Position_RTN': rel_pos_rtn.tolist(),  # Ensure this is a list
+            'Relative_Velocity_RTN': rel_vel_rtn.tolist()  # Ensure this is a list
         }
 
-        # Optionally, print CDM for each pair
+        # Optionally, print the CDM for the current pair
         print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn)
 
 print("CDM generation completed.")
 
 # Step 7: Identify High Interest Events (HIEs)
-hie_r_threshold = 1e3  # meters, JAXA
-hie_Pc_trshold = 1e-4 # ESA
+hie_r_threshold = 1e4  # 1e3 meters, JAXA
+hie_E_treshold = 200 #todo: check this reference for high impact events and make sure that it comes from literature
+hie_Pc_trshold = 1e-6 # 1e-4 ESA
+#todo: add mahalanobis here minore 4.6 per assicurare sulla probabilità di impatto
+# TODO: what are delande and foster? Implement
+
 hie_results = {}
+#todo: maybe consider energy of the impact to determine whether or not to maneuver
 
 for pair, data in cdm_data.items():
     min_distance = data['dE']
-    tca_time = data['tca_time']
+    tca_time = data['TCA_Time']
     Pc = data["Pc"]
+    dM = data["dM"]
+    Uc = data["Uc"]
 
     if min_distance < hie_r_threshold or Pc > hie_Pc_trshold:
         decision = f"HIE identified for pair: {pair}"
@@ -265,9 +252,12 @@ for pair, data in cdm_data.items():
         decision = "Not an HIE"
 
     hie_results[pair] = {
-        'tca': tca_time,
-        'miss_distance': min_distance,
-        'decision': decision
+        'TCA': tca_time,
+        'Eucledian Miss Distance': min_distance,
+        'Probabiltiy of Collision': Pc,
+        "Outer Probability of Collision":Uc,
+        'Mahalanobis Distance': dM,
+        'Decision': decision
     }
 
 print("HIE analysis completed.")
@@ -305,12 +295,12 @@ print("Results saved to:", output_dir)
 
 print("Results saved to files.")
 
-# Generate summary report
-print("\nHigh Interest Event Summary:")
-for pair, result in hie_results.items():
-    if result['decision'] == "Avoidance maneuver recommended":
-        print(
-            f"Pair: {pair}, TCA: {result['tca']}, Miss Distance: {result['miss_distance']} m, Decision: {result['decision']}")
+# # Generate summary report
+# print("\nHigh Interest Event Summary:")
+# for pair, result in hie_results.items():
+#     if result['decision'] == not "Not an HIE":
+#         print(
+#             f"Pair: {pair}, TCA: {result['tca']}, Miss Distance: {result['miss_distance']} m, Decision: {result['decision']}")
 # # Debug: Propagate using Keplerian motion for 48 hours and plot
 # keplerian_positions = {}
 # for obj_id in rso_dict.keys():
@@ -341,3 +331,35 @@ for pair, result in hie_results.items():
 # plt.show()
 
 
+
+# Function to convert from Cartesian to RTN coordinates
+def cartesian_to_rtn(X1, X2):
+    r1 = np.array(X1[:3])
+    v1 = np.array(X1[3:])
+    r2 = np.array(X2[:3])
+    v2 = np.array(X2[3:])
+
+    r1 = r1.flatten()
+    v1 = v1.flatten()
+    r2 = r2.flatten()
+    v2 = v2.flatten()
+
+    # print(r1, v1, r2, v2)
+    # print("r1 shape:", r1.shape)
+    # print("v1 shape:", v1.shape)
+
+    r_rel = r2 - r1
+    v_rel = v2 - v1
+
+    r_norm = np.linalg.norm(r1)
+    r_hat = r1 / r_norm
+    h = np.cross(r1, v1)
+    h_hat = h / np.linalg.norm(h)
+    t_hat = np.cross(h_hat, r_hat)
+
+    R = np.vstack((r_hat, t_hat, h_hat)).T
+
+    rel_pos_rtn = R @ r_rel
+    rel_vel_rtn = R @ v_rel
+
+    return rel_pos_rtn, rel_vel_rtn

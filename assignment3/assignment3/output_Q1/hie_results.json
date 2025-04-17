@@ -1,0 +1,44 @@
+{
+    "(31698, 91362)": {
+        "TCA": 796888799.9962436,
+        "Eucledian Miss Distance": 0.8842365939213047,
+        "Probabiltiy of Collision": 0.0,
+        "Mahalanobis Distance": 84019.87540138487,
+        "Decision": "HIE identified for pair: (31698, 91362)"
+    },
+    "(31698, 91267)": {
+        "TCA": 796874400.000198,
+        "Eucledian Miss Distance": 75.72967392400778,
+        "Probabiltiy of Collision": 0.0,
+        "Mahalanobis Distance": 20408.789092466403,
+        "Decision": "HIE identified for pair: (31698, 91267)"
+    },
+    "(31698, 91991)": {
+        "TCA": 796892402.7347165,
+        "Eucledian Miss Distance": 483.28487011984936,
+        "Probabiltiy of Collision": 0.0,
+        "Mahalanobis Distance": 6110.264692587938,
+        "Decision": "HIE identified for pair: (31698, 91991)"
+    },
+    "(31698, 91894)": {
+        "TCA": 796942799.9493573,
+        "Eucledian Miss Distance": 248.10727725863487,
+        "Probabiltiy of Collision": 0.0,
+        "Mahalanobis Distance": 9431.244171564527,
+        "Decision": "HIE identified for pair: (31698, 91894)"
+    },
+    "(31698, 91630)": {
+        "TCA": 796899599.9677536,
+        "Eucledian Miss Distance": 507.48264250049823,
+        "Probabiltiy of Collision": 0.0,
+        "Mahalanobis Distance": 393617.089397536,
+        "Decision": "HIE identified for pair: (31698, 91630)"
+    },
+    "(31698, 91813)": {
+        "TCA": 796917599.9929538,
+        "Eucledian Miss Distance": 101.3464685641209,
+        "Probabiltiy of Collision": 0.0,
+        "Mahalanobis Distance": 15922.037475389709,
+        "Decision": "HIE identified for pair: (31698, 91813)"
+    }
+}
