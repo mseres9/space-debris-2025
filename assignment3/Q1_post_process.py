@@ -18,18 +18,19 @@ def load_json_file(file_path):
     return data
 
 # Function to print CDM data
-def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, rel_vel_rtn):
+def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, rel_vel_rtn,decision=None):
     print(f"\nCDM for pair {pair}:")
     # print(f"Object 1 ID: {pair[0]}")
     # print(f"Object 2 ID: {pair[1]}")
-    print(f"TCA (TDB): {(tca)}")
+    print(f"TCA (TDB): {(tca)} s")
     print(f"Miss Distance: {miss_distance} m")
-    print(f"Mahalanobis Distance: {mahalanobis:}")
+    print(f"Mahalanobis Distance: {mahalanobis:} ")
     print(f"Outer Pc: {outer_pc:}")
     print(f"Pc: {pc:}")
     print(f"Relative Position RTN: {rel_pos_rtn}")
     print(f"Relative Velocity RTN: {rel_vel_rtn}")
-
+    if decision:
+        print(f"Decision: {decision}")
 # Load datasets
 assignment_data_directory = 'data/group4'
 rso_file = os.path.join(assignment_data_directory, 'estimated_rso_catalog.pkl')
@@ -44,8 +45,9 @@ cdm_data_new = {}
 propagated_states = {}
 state_parameters = {}
 
-hie_r_threshold = 1e4  # 1e3 meters, JAXA
-hie_Pc_trshold = 1e-6 # 1e-4 ESA
+hie_r_threshold = 1e3  # 1e3 meters, JAXA
+hie_Pc_trshold = 1e-4 # 1e-4 ESA
+hie_Uc_trshold = 1e-4
 
 # Define initial time
 t0 = (datetime(2025, 4, 1, 12, 0, 0) - datetime(2000, 1, 1, 12, 0, 0)).total_seconds()
@@ -67,9 +69,8 @@ for pair, data in tca_data.items():
     # Extract the object IDs and TCA time for the current pair
     obj1_id, obj2_id = map(int, pair.strip('()').split(','))
     tca_time = data['tca_time']
-    print(f"TCA Time: {tca_time}")
     trange1 = np.array([t0, tca_time])  # Time range for propagation
-    min_distance = data['rho_list']
+    min_distance = min(data['rho_list'])
 
     # Retrieve the state and covariance data for object 1 and object 2
     state_data1 = rso_dict[obj1_id]
@@ -154,8 +155,26 @@ for pair, data in tca_data.items():
         'Relative_Velocity_RTN': rel_vel_rtn.tolist()
     }
 
-    # Optionally, print CDM data for each pair
-    print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn)
+    # Alert generation based on Pc
+    if Pc > 1e-7:
+        # Yellow alert level
+        print(f"Yellow alert: Collision Risk identified for pair {pair}")
+        # Store the alert
+        cdm_data_new[pair]['Alert'] = 'Yellow Alert'
+
+        # HIE classification only for Yellow Alerts
+        decision = ""
+        if min_distance < hie_r_threshold and Pc > hie_Pc_trshold:
+            decision = "HIE found"
+        elif min_distance < hie_r_threshold and Uc < hie_Uc_trshold:
+            decision = "Not an HIE, safe"
+        else:
+            decision = "No immediate risk"
+
+        # Store the HIE decision
+        cdm_data_new[pair]['HIE_Decision'] = decision
+
+        print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn, decision=decision)
 
 print("CDM generation completed.")
 
@@ -171,6 +190,6 @@ def convert_for_json(obj):
         return obj.isoformat()
     return obj  # fallback
 
-with open(os.path.join(output_dir, 'cdm_results_new.json'), 'w') as f:
+with open(os.path.join(output_dir, 'cdm_results_with_HIE.json'), 'w') as f:
     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
                for k, v in cdm_data_new.items()}, f, indent=4)
