@@ -45,6 +45,7 @@ tca_data = load_json_file('assignment3/output_Q1/tca_results.json')
 cdm_data_new = {}
 propagated_states = {}
 state_parameters = {}
+ID_HIE = {}
 
 hie_r_threshold = 1e3  # 1e3 meters, JAXA
 hie_Pc_trshold = 1e-4 # 1e-4 ESA
@@ -175,6 +176,20 @@ for pair, data in tca_data.items():
         # Store the HIE decision
         cdm_data_new[pair]['HIE_Decision'] = decision
 
+        if decision == "HIE found":
+            ID_HIE[pair] = {'State1': X1,
+            'State2': X2,
+            'Covariance1': P1,
+            'Covariance2': P2,
+            'TCA_Time': tca_time,
+            'dE': min_distance,
+            'dM': dM,
+            'Pc': Pc,
+            'Uc': Uc,
+            'Relative_Position_RTN': rel_pos_rtn.tolist(),
+            'Relative_Velocity_RTN': rel_vel_rtn.tolist()
+                            }
+
         print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn, decision=decision)
 
 print("CDM generation completed.")
@@ -192,5 +207,9 @@ def convert_for_json(obj):
     return obj  # fallback
 
 with open(os.path.join(output_dir, 'cdm_results_with_HIE.json'), 'w') as f:
+    json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
+               for k, v in cdm_data_new.items()}, f, indent=4)
+
+with open(os.path.join(output_dir, 'ID_HIE.json'), 'w') as f:
     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
                for k, v in cdm_data_new.items()}, f, indent=4)
