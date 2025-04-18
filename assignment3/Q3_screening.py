@@ -1,21 +1,26 @@
-import json
 import time
 import os
 import numpy as np
 from itertools import combinations
 from datetime import datetime, timedelta
+from itertools import combinations
 import pickle
 import json
 import ConjunctionUtilities as ConjUtil
 import TudatPropagator as prop
 from FilteringUtilites import *
+from tudatpy.astro.element_conversion import cartesian_to_keplerian, keplerian_to_cartesian
+import matplotlib.pyplot as plt
+from tudatpy.astro.two_body_dynamics import propagate_kepler_orbit
+
 from assignment3.ConjunctionUtilities import eci2ric, eci2ric_vel
 
-# Function to load JSON file as dictionary
-def load_json_file(file_path):
-    with open(file_path, 'r') as file:
-        data = json.load(file)
-    return data
+
+def convert_to_tdb(tca_seconds):
+    base_date = datetime(2000, 1, 1, 12, 0, 0)  # J2000 epoch
+    tca_date = base_date + timedelta(seconds=tca_seconds)
+    return tca_date.isoformat()
+
 
 # Function to print CDM data
 def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, rel_vel_rtn,decision=None):
@@ -33,20 +38,129 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
     if decision:
         print(f"Decision: {decision}")
 
-# Load datasets
+# Step 1: Retrieve the dataset
 assignment_data_directory = 'data/group4'
-rso_file = os.path.join(assignment_data_directory, 'estimated_rso_catalog.pkl')
+rso_file = os.path.join(assignment_data_directory, 'rso_dict_modified_Q3.pkl')
 rso_dict = ConjUtil.read_catalog_file(rso_file)
 
-# cdm_data = load_json_file('assignment3/output_Q1/cdm_results.json')
-# hie_data = load_json_file('assignment3/output_Q1/hie_results.json')
-tca_data = load_json_file('assignment3/output_Q1/tca_results.json')
+# Step 2: Apply filtering to the catalog before propagation
+D = 100e3  # Distance threshold (meters)
+protected_id = 31698
+filtered_pairs = []
+
+
+print("Filtering all potential threats to object", protected_id)
+object_ids = list(rso_dict.keys())
+object_ids.remove(protected_id)
+
+for obj_id in object_ids:
+    rso1 = rso_dict[protected_id]
+    rso2 = rso_dict[obj_id]
+
+    if apogee_perigee_filter(rso1['state'], rso2['state'], D):
+        continue
+
+    # if geometrical_filter(rso1['state'], rso2['state'], D):
+    #     continue
+
+    # if time_filter(rso1['state'], rso2['state'], D):
+    #     continue
+
+    filtered_pairs.append((protected_id, obj_id))
+
+print(f"Filtering completed: {len(filtered_pairs)} potential threat pairs selected.")
+
+# Step 3: Define initial and final time
+t0 = (datetime(2025, 4, 1, 12, 0, 0) - datetime(2000, 1, 1, 12, 0, 0)).total_seconds()
+tf = t0 + 48 * 3600  # 48 hours later
+trange = np.array([t0, tf])
+
+# Step 4: Initialize Tudat bodies
+bodies_to_create = ['Sun', 'Earth', 'Moon']
+bodies = prop.tudat_initialize_bodies(bodies_to_create)
+
+# Step 5: Define integrator parameters
+int_params = {
+    'tudat_integrator': 'rkf78',
+    'step': 10.,
+    'max_step': 1000.,
+    'min_step': 1e-3,
+    'rtol': 1e-12,
+    'atol': 1e-12
+}
+
+# Step 6: Compute TCA for each filtered pair
+tca_results = {}
+start_time = time.time()
+
+for obj1_id, obj2_id in filtered_pairs:
+    print(f"Computing TCA for pair: ({obj1_id}, {obj2_id})")
+
+    state_data1 = rso_dict[obj1_id]
+    state_data2 = rso_dict[obj2_id]
+
+    X1 = state_data1['state']
+    X2 = state_data2['state']
+
+    rso1_params = {
+        'mass': state_data1.get('mass', 100.0),
+        'area': state_data1.get('area', 1.0),
+        'Cd': state_data1.get('Cd', 2.2),
+        'Cr': state_data1.get('Cr', 1.3),
+        'sph_deg': 8,
+        'sph_ord': 8,
+        'central_bodies': ['Earth'],
+        'bodies_to_create': bodies_to_create
+    }
+
+    rso2_params = {
+        'mass': state_data2.get('mass', 100.0),
+        'area': state_data2.get('area', 1.0),
+        'Cd': state_data2.get('Cd', 2.2),
+        'Cr': state_data2.get('Cr', 1.3),
+        'sph_deg': 8,
+        'sph_ord': 8,
+        'central_bodies': ['Earth'],
+        'bodies_to_create': bodies_to_create
+    }
+
+    T_list, rho_list = ConjUtil.compute_TCA(X1, X2, trange, rso1_params, rso2_params, int_params, bodies)
+
+    idx_min_rho = np.argmin(rho_list)
+    tca_results[(obj1_id, obj2_id)] = {
+        'T_list': T_list,
+        'rho_list': rho_list,
+        'tca_time': T_list[idx_min_rho]
+    }
+print(f"TCA computation completed in {time.time() - start_time:.2f} seconds.")
+
+
+output_dir = "assignment3/output_Q3"
+os.makedirs(output_dir, exist_ok=True)
+
+# # Step 8: Save the results
+def convert_for_json(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj  # fallback
+
+with open(os.path.join(output_dir, 'tca_results.json'), 'w') as f:
+    json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
+               for k, v in tca_results.items()}, f, indent=4)
+
 
 # Initialize dictionaries to store propagated states and state parameters
 cdm_data_new = {}
 propagated_states = {}
 state_parameters = {}
 ID_HIE = {}
+
+hie_r_threshold = 1e3  # 1e3 meters, JAXA
+hie_Pc_trshold = 1e-4 # 1e-4 ESA
+hie_Uc_trshold = 1e-4
+
 
 hie_r_threshold = 1e3  # 1e3 meters, JAXA
 hie_Pc_trshold = 1e-4 # 1e-4 ESA
@@ -68,7 +182,7 @@ int_params = {
 }
 
 # Iterate over pairs in the TCA data
-for pair, data in tca_data.items():
+for pair, data in tca_results.items():
     # Extract the object IDs and TCA time for the current pair
     obj1_id, obj2_id = map(int, pair.strip('()').split(','))
     tca_time = data['tca_time']
@@ -201,7 +315,7 @@ for pair, data in tca_data.items():
 
 print("CDM generation completed.")
 
-output_dir = "assignment3/output_Q1"
+output_dir = "assignment3/output_Q3"
 os.makedirs(output_dir, exist_ok=True)
 
 # Step 8: Save the results
