@@ -29,6 +29,7 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
     print(f"Pc: {pc:}")
     print(f"Relative Position RTN: {rel_pos_rtn}")
     print(f"Relative Velocity RTN: {rel_vel_rtn}")
+    print(f"Energy to Mass Ratio:{EMR}")
     if decision:
         print(f"Decision: {decision}")
 
@@ -105,6 +106,9 @@ for pair, data in tca_data.items():
         'bodies_to_create': bodies_to_create
     }
 
+    m1 = rso_dict[obj1_id]['mass']
+    m2 = rso_dict[obj2_id]['mass']
+
     # Propagate state and covariance for both objects at the given TCA time
     try:
         # Propagate the state and covariance for object 1
@@ -123,7 +127,6 @@ for pair, data in tca_data.items():
     # Calculate and store the risk metrics
     X1 = propagated_states[(obj1_id, tca_time)]['state']
     X2 = propagated_states[(obj2_id, tca_time)]['state']
-
     P1 = propagated_states[(obj1_id, tca_time)]['covar']
     P2 = propagated_states[(obj2_id, tca_time)]['covar']
 
@@ -140,7 +143,9 @@ for pair, data in tca_data.items():
     r2 = np.sqrt(rso_dict[obj2_id]['area']/(np.pi))  # Radius of object 2
     Pc = ConjUtil.Pc2D_Foster(X1, P1, X2, P2, r1 + r2)
     Uc = ConjUtil.Uc2D(X1, P1, X2, P2, r1 + r2)
+    EMR = 0.5*m2/m1*np.linalg.norm(rel_vel_rtn)**2
 
+# todo: fix EMR
 
     # Store the results in the new CDM data dictionary
     cdm_data_new[pair] = {
@@ -154,7 +159,9 @@ for pair, data in tca_data.items():
         'Pc': Pc,
         'Uc': Uc,
         'Relative_Position_RTN': rel_pos_rtn.tolist(),
-        'Relative_Velocity_RTN': rel_vel_rtn.tolist()
+        'Relative_Velocity_RTN': rel_vel_rtn.tolist(),
+        'Relative_Velocirt_norm': np.linalg.norm(rel_vel_rtn),
+        'EMR': EMR
     }
 
     # Alert generation based on Pc
@@ -176,19 +183,20 @@ for pair, data in tca_data.items():
         # Store the HIE decision
         cdm_data_new[pair]['HIE_Decision'] = decision
 
-        if decision == "HIE found":
-            ID_HIE[pair] = {'State1': X1,
-            'State2': X2,
-            'Covariance1': P1,
-            'Covariance2': P2,
-            'TCA_Time': tca_time,
-            'dE': min_distance,
-            'dM': dM,
-            'Pc': Pc,
-            'Uc': Uc,
-            'Relative_Position_RTN': rel_pos_rtn.tolist(),
-            'Relative_Velocity_RTN': rel_vel_rtn.tolist()
-                            }
+        ID_HIE[pair] = {'State1': X1,
+        'State2': X2,
+        'Covariance1': P1,
+        'Covariance2': P2,
+        'TCA_Time': tca_time,
+        'dE': min_distance,
+        'dM': dM,
+        'Pc': Pc,
+        'Uc': Uc,
+        'Relative_Position_RTN': rel_pos_rtn.tolist(),
+        'Relative_Velocity_RTN': rel_vel_rtn.tolist(),
+        'Relative_Velocirt_norm': np.linalg.norm(rel_vel_rtn),
+        'EMR': EMR
+                        }
 
         print_cdm(pair, tca_time, min_distance, dM, Uc, Pc, rel_pos_rtn, rel_vel_rtn, decision=decision)
 
@@ -212,4 +220,4 @@ with open(os.path.join(output_dir, 'cdm_results_with_HIE.json'), 'w') as f:
 
 with open(os.path.join(output_dir, 'ID_HIE.json'), 'w') as f:
     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
-               for k, v in cdm_data_new.items()}, f, indent=4)
+               for k, v in ID_HIE.items()}, f, indent=4)

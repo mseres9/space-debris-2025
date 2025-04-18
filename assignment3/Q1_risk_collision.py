@@ -247,26 +247,26 @@ print(f"TCA computation completed in {time.time() - start_time:.2f} seconds.")
 #
 # print("HIE analysis completed.")
 #
-# output_dir = "assignment3/output_Q1"
-# os.makedirs(output_dir, exist_ok=True)
-#
+output_dir = "assignment3/output_Q1"
+os.makedirs(output_dir, exist_ok=True)
+
 # # Step 8: Save the results
 #
-# def convert_for_json(obj):
-#     if isinstance(obj, np.ndarray):
-#         return obj.tolist()
-#     if isinstance(obj, datetime):
-#         return obj.isoformat()
-#     return obj  # fallback
+def convert_for_json(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj  # fallback
 #
 # with open(os.path.join(output_dir, 'cdm_results.json'), 'w') as f:
 #     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
 #                for k, v in cdm_data.items()}, f, indent=4)
 #
-# with open(os.path.join(output_dir, 'tca_results.json'), 'w') as f:
-#     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
-#                for k, v in tca_results.items()}, f, indent=4)
-#
+with open(os.path.join(output_dir, 'tca_results.json'), 'w') as f:
+    json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
+               for k, v in tca_results.items()}, f, indent=4)
+
 # with open(os.path.join(output_dir, 'hie_results.json'), 'w') as f:
 #     json.dump({str(k): {kk: convert_for_json(vv) for kk, vv in v.items()}
 #                for k, v in hie_results.items()}, f, indent=4)
