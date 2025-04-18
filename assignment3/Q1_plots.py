@@ -8,15 +8,19 @@ from datetime import datetime
 
 propagated_states = {}
 
+
 def load_json_file(file_path):
     with open(file_path, 'r') as file:
         return json.load(file)
 
+
+# Define initial time
 t0 = (datetime(2025, 4, 1, 12, 0, 0) - datetime(2000, 1, 1, 12, 0, 0)).total_seconds()
 tf = t0 + 48 * 3600
 bodies_to_create = ['Sun', 'Earth', 'Moon']
 bodies = prop.tudat_initialize_bodies(bodies_to_create)
 
+# Integration parameters
 int_params = {
     'tudat_integrator': 'rkf78',
     'step': 10.,
@@ -26,6 +30,7 @@ int_params = {
     'atol': 1e-12
 }
 
+# Load datasets
 assignment_data_directory = 'data/group4'
 rso_file = os.path.join(assignment_data_directory, 'estimated_rso_catalog.pkl')
 rso_dict = ConjUtil.read_catalog_file(rso_file)
@@ -34,8 +39,17 @@ cdm_data = load_json_file('assignment3/output_Q1/ID_HIE.json')
 output_dir = "assignment3/output_Q1_plots"
 os.makedirs(output_dir, exist_ok=True)
 
+# Only process these object IDs
+target_obj_ids = [91894, 91630, 91813]
+
+# Iterate over pairs
 for pair, data in cdm_data.items():
     obj1_id, obj2_id = map(int, pair.strip('()').split(','))
+
+    # Process only specific object IDs
+    if obj2_id not in target_obj_ids:
+        continue
+
     tca_time = data['TCA_Time']
     min_distance = data['dE']
 
@@ -64,13 +78,32 @@ for pair, data in cdm_data.items():
     trange1 = np.arange(t0, tf, 100)
     rel_pos_rtn_array = np.zeros((3, len(trange1)))
 
+    # Set the initial propagation state to the current values from the previous iteration (if applicable)
+    previous_t = t0
+    previous_X1 = X1
+    previous_X2 = X2
+    previous_P1 = P1
+    previous_P2 = P2
+
     for idx, t in enumerate(trange1):
-        print(idx,t)
-        trange = [t0, t + 100]
+        print(f"Processing time step {idx}, t = {t}")
 
-        tout1_plot, Xout1_plot, _ = prop.propagate_state_and_covar(X1, P1, trange, state_params1, int_params, bodies)
-        tout2_plot, Xout2_plot, _ = prop.propagate_state_and_covar(X2, P2, trange, state_params2, int_params, bodies)
+        # Start propagation from previous state and time
+        trange = [previous_t, t + 100]
 
+        tout1_plot, Xout1_plot, _ = prop.propagate_state_and_covar(previous_X1, previous_P1, trange, state_params1,
+                                                                   int_params, bodies)
+        tout2_plot, Xout2_plot, _ = prop.propagate_state_and_covar(previous_X2, previous_P2, trange, state_params2,
+                                                                   int_params, bodies)
+
+        # Update the states for the next iteration
+        previous_t = t + 100
+        previous_X1 = Xout1_plot
+        previous_X2 = Xout2_plot
+        previous_P1 = _  # Assuming covariance is not needed here, but you may store it if necessary
+        previous_P2 = _  # Same as above
+
+        # Relative position calculation
         state1 = np.asarray(Xout1_plot).flatten()
         state2 = np.asarray(Xout2_plot).flatten()
         rel_pos = np.array(state1[:3]) - np.array(state2[:3])
@@ -82,6 +115,7 @@ for pair, data in cdm_data.items():
     time_rel = (trange1 - tca_time) / 3600
     rel_norm = np.linalg.norm(rel_pos_rtn_array, axis=0)
 
+    # Plot RTN
     plt.figure(figsize=(10, 6))
     plt.plot(time_rel, rel_norm, label='Relative distance RTN')
     plt.scatter(0, min_distance, color='red', label='TCA (min distance)', zorder=5)

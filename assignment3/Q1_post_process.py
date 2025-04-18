@@ -11,6 +11,11 @@ import TudatPropagator as prop
 from FilteringUtilites import *
 from assignment3.ConjunctionUtilities import eci2ric, eci2ric_vel
 
+def convert_to_tdb(tca_seconds):
+    base_date = datetime(2000, 1, 1, 12, 0, 0)  # J2000 epoch
+    tca_date = base_date + timedelta(seconds=tca_seconds)
+    return tca_date.isoformat()
+
 # Function to load JSON file as dictionary
 def load_json_file(file_path):
     with open(file_path, 'r') as file:
@@ -22,7 +27,7 @@ def print_cdm(pair, tca, miss_distance, mahalanobis, outer_pc, pc, rel_pos_rtn, 
     print(f"\nCDM for pair {pair}:")
     # print(f"Object 1 ID: {pair[0]}")
     # print(f"Object 2 ID: {pair[1]}")
-    print(f"TCA (TDB): {(tca)} s")
+    print(f"TCA (TDB): {convert_to_tdb(tca)} s")
     print(f"Miss Distance: {miss_distance} m")
     print(f"Mahalanobis Distance: {mahalanobis:} ")
     print(f"Outer Pc: {outer_pc:}")
